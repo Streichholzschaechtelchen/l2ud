@@ -6,7 +6,6 @@ type alias = { oldident: ident;
                newident: ident }
   
 type expr = Estring of string
-          | Eident of ident
           | Eproject of ident * int
           | Econcat of expr * expr
           | Einterl of expr * expr
@@ -36,7 +35,6 @@ let print_ident = print_string
 let print_expr e =
   let rec string_of_expr = function
       Estring s -> "\"" ^ s ^ "\""
-    | Eident i  -> i
     | Eproject (i1, i2)-> i1 ^ "[" ^ (string_of_int i2) ^ "]"
     | Econcat (e1, e2) -> "Concat(" ^ (string_of_expr e1) ^ ", "
                           ^ (string_of_expr e2) ^ ")"

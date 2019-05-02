@@ -1,3 +1,5 @@
+(* Convert a Tl1.file into transfer language 2's Tl2.file, computing all RECord projections *)
+
 let tl2_typ = List.length
 
 let rec search k = function
@@ -16,7 +18,7 @@ let rec tl2_expr (lincats: Tl1.lincat_map)
         : Tl2.expr =
   match e with
     Tl1.Estring s         -> Tl2.Estring s
-  | Tl1.Eident i          -> Tl2.Eident i
+  | Tl1.Eident i          -> assert false
   | Tl1.Eproject (i1, i2) -> let i = index i2 (Tl1.M.find (search i1 args)
                                                  lincats) in
                              Tl2.Eproject (i1, i)

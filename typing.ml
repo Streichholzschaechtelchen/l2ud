@@ -275,3 +275,5 @@ let type_file (file: Gfpm.file) : Tgfpm.file =
   let g_lins = file.lins in
   let lins =  List.fold_left (process_lin lincats) Tgfpm.M.empty g_lins in
   { name; includeccs; lincats; params; lins }
+
+    (*TODO: several words in a string bspw. "the potato"*)

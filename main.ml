@@ -34,6 +34,7 @@ let loop filename =
   let tgfpm_file = type_with_error gfpm_file in
   let tl1_file = Finfun.tl1_file tgfpm_file in
   let tl2_file = Rec.tl2_file tl1_file in
+  let grammar = Convert.convert_file tl2_file in
   Tgfpm.print_file tgfpm_file;
   print_newline ();
   Tl1.print_file tl1_file;

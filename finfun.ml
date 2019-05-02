@@ -1,3 +1,5 @@
+(* Convert a typed Tgfpm.file into transfer language 1's Tl1.file, computing all FINite FUNctions *)
+
 let string_project i1 i2 =
   i1 ^ "." ^ i2
 
