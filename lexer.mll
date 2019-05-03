@@ -45,7 +45,10 @@ rule read = parse
   | "=>"       { BIG_RARROW }
   | '{'        { OCURLY }
   | '}'        { CCURLY }
+  | '['        { OBRACK }
+  | ']'        { CBRACK }
   | '|'        { BAR }
+  | "<>"       { GFLOCK }
   | "Set"      { SET }
   | "concrete" { CONCRETE } (* No abstract syntax, no flags, no printname *)
   | "lin"      { LIN }
@@ -53,7 +56,6 @@ rule read = parse
   | "param"    { PARAM }
   | "table"    { TABLE }
   | "includecc"{ INCLUDECC }
-  | "as"       { AS }
   | identifier as ident
                { IDENT (ident) }
   | eof        { EOF }

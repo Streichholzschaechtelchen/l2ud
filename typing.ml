@@ -31,6 +31,8 @@ module TypingErrors = struct
                     "Right-hand side of : in lincat declaration must be a type" (*24*);
                     "Lincat argument name conflicts with an already bound name" (*25*);
                     "Computed type of lin does not match declared type" (*26*);
+                    "Course-of-value tables must be label by a parameter type" (*27*);
+                    "Number of items in course-of-value table does not match number of values in parameter type" (*28*);               
                  |]
                    
   let throw ?(info="") (loc: Lexing.position) err_id =
@@ -66,8 +68,9 @@ let type_op (t_e1: Tgfpm.expr)
   | _   , _    -> TypingErrors.throw loc1 11
   end
   
-let rec type_expr (expr: Gfpm.expr)
+let rec type_expr (params: Tgfpm.param_map) (expr: Gfpm.expr)
         : Tgfpm.expr =
+  let type_expr = type_expr params in
   match expr.expr_node with
     Gfpm.Estring s
     -> { expr_node = Tgfpm.Estring s;
@@ -169,7 +172,29 @@ let rec type_expr (expr: Gfpm.expr)
          | _, _             -> assert false
        in { expr_node = Tgfpm.Etable (List.sort compare t_node);
             expr_type = Tgfpm.Ttable (p, t) }
-
+  | Gfpm.Ecovtable (p, es)
+    -> let t_p = type_ident p in
+       match t_p with
+         Tgfpm.Ttyp ->
+          begin let values = Tgfpm.M.find p.id params in
+                let t_es, typ = List.fold_left (fun (t_es, typ) e ->
+                                    let t_e = type_expr e in
+                                    match t_e.expr_type, typ with
+                                      _ , None
+                                      -> t_e::t_es, Some t_e.expr_type
+                                    | t1, Some t2 when t1 = t2
+                                      -> t_e::t_es, Some t2
+                                    | _ , _
+                                      -> TypingErrors.throw e.expr_loc 17)
+                                  ([], None) es
+                in match (List.length t_es) - (List.length values), typ with
+                     0, Some t -> let table = List.map2 (fun a b -> (a, b)) values t_es
+                                  in  { expr_node = Tgfpm.Etable table;
+                                        expr_type = Tgfpm.Ttable (p.id, t) }
+                   | _, Some t -> TypingErrors.throw p.id_loc 28
+                   | _, _      -> assert false
+          end
+       | _          -> TypingErrors.throw p.id_loc 27
 let rec type_typ (t: Gfpm.typ) : Tgfpm.typ =
   match t with
     Gfpm.Tset     -> Tgfpm.Tset
@@ -202,7 +227,10 @@ let type_lincat (l: Gfpm.lincat) : Tgfpm.typ =
   else Hashtbl.add types lincat_name.id lincat_type;
   lincat_type
                                        
-let type_lin (lincats: Tgfpm.lincat_map) (l: Gfpm.lin) : Tgfpm.lin =
+let type_lin (params: Tgfpm.param_map)
+             (lincats: Tgfpm.lincat_map)
+             (l: Gfpm.lin)
+    : Tgfpm.lin =
   let lin_name = l.lin_name
   and lin_outc = l.lin_outc.id
   and lin_args = List.map (fun (a: Gfpm.ident * Gfpm.ident)
@@ -221,7 +249,7 @@ let type_lin (lincats: Tgfpm.lincat_map) (l: Gfpm.lin) : Tgfpm.lin =
     else Hashtbl.add types (fst a).id (Hashtbl.find types (snd a).id)
   in
   List.iter fill_arg_types l.lin_args;
-  let t_lin_expr = type_expr lin_expr in
+  let t_lin_expr = type_expr params lin_expr in
   let expected_t = Tgfpm.M.find lin_outc lincats in
   let t_l = match t_lin_expr.expr_type with
       t when t = expected_t -> Tgfpm.{ lin_outc; lin_args; lin_expr = t_lin_expr }
@@ -244,11 +272,12 @@ let fill_param_types (params: Gfpm.param list) =
           List.iter fill_param_value_type param.param_values)
   in List.iter fill_param_type params
 
-let process_lin (lincats: Tgfpm.lincat_map)
+let process_lin (params: Tgfpm.param_map)
+                (lincats: Tgfpm.lincat_map)
                 (li: Tgfpm.lin Tgfpm.M.t)
                 (l: Gfpm.lin)
     : Tgfpm.lin Tgfpm.M.t =
-  let t_l = type_lin lincats l in
+  let t_l = type_lin params lincats l in
   let rec aux i =
     let name = l.lin_name.id ^ "_" ^ (string_of_int i) in
     try (ignore (Tgfpm.M.find name li);
@@ -267,13 +296,11 @@ let type_file (file: Gfpm.file) : Tgfpm.file =
                                                           -> v.id)
                                                   p.param_values) acc)
                      Tgfpm.M.empty g_params in
-  let g_includeccs = file.includeccs in
-  let includeccs = g_includeccs in
   let g_lincats = file.lincats in
   let lincats = List.fold_left (fun acc (l: Gfpm.lincat) ->
                     Tgfpm.M.add l.lincat_name.id (type_lincat l) acc) Tgfpm.M.empty g_lincats in
   let g_lins = file.lins in
-  let lins =  List.fold_left (process_lin lincats) Tgfpm.M.empty g_lins in
-  { name; includeccs; lincats; params; lins }
+  let lins =  List.fold_left (process_lin params lincats) Tgfpm.M.empty g_lins in
+  { name; lincats; params; lins }
 
     (*TODO: several words in a string bspw. "the potato"*)

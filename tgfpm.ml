@@ -34,9 +34,6 @@ and expr_nod = Estring of string
 
 and table = (ident * expr) list
 and record = (ident * expr) list
-                            
-type includecc = Gfpm.includecc (*{ filename: string;
-                   aliases : alias list }*)
 
 type param_map = ident list M.t
 
@@ -49,7 +46,6 @@ type lin = { lin_outc: ident;
 type lin_map = lin M.t
                 
 type file = { name      : ident;
-              includeccs: includecc list;
               lincats   : lincat_map;
               params    : param_map;
               lins      : lin_map }

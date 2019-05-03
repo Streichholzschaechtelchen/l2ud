@@ -44,8 +44,7 @@ let tl2_lin (lincats: Tl1.lincat_map) (l: Tl1.lin) : Tl2.lin =
 
 let tl2_file (file: Tl1.file) : Tl2.file =
   let name = file.name
-  and includeccs = file.includeccs
   and lincats = Tl1.M.map tl2_typ file.lincats
   and lins = Tl1.M.map (tl2_lin file.lincats) file.lins in
-  Tl2.{ name; includeccs; lincats; lins }
+  Tl2.{ name; lincats; lins }
     

@@ -22,9 +22,6 @@ type expr = Estring of string
 
 type record = (ident * expr) list
                             
-type includecc = Gfpm.includecc (*{ filename: string;
-                   aliases : alias list }*)
-
 type lincat_map = typ M.t
        
 type lin = { lin_outc: ident;
@@ -34,7 +31,6 @@ type lin = { lin_outc: ident;
 type lin_map = lin M.t
                 
 type file = { name      : ident;
-              includeccs: includecc list;
               lincats   : lincat_map;
               lins      : lin_map }
 

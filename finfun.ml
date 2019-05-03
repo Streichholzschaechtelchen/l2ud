@@ -259,8 +259,7 @@ let tl1_file (file: Tgfpm.file) : Tl1.file =
   let lins = tl1_lins t_params fli tfm t_lins in
   let lincats = tl1_lincats fli in
   let name = file.name in
-  let includeccs = file.includeccs in
-  { name; includeccs; lincats; lins }
+  { name; lincats; lins }
                
 
  

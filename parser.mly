@@ -8,15 +8,16 @@
 
 (* Keywords *)                  
 %token SET
-%token CONCRETE INCLUDECC AS
+%token CONCRETE INCLUDECC
 %token LIN LINCAT PARAM
 %token TABLE
 
 (* Symbols *)
-%token OPAREN CPAREN OCURLY CCURLY
+%token OPAREN CPAREN OCURLY CCURLY OBRACK CBRACK
 %token COLON SEMICOLON BAR
 %token EQUAL
 %token BIG_RARROW
+%token GFLOCK
        
 (* Operators *)
 %token LOCK
@@ -36,8 +37,9 @@
 %left EXCLMARK
 %left DOT
 
-%start file
+%start file standalone_lins
 %type <Gfpm.file> file
+%type <Gfpm.lin list> standalone_lins
 
 %%
                     
@@ -51,18 +53,8 @@ file:
       { i }
 
 includecc:
-    | s = STRING; OCURLY; a = aliases; CCURLY
-      { { filename = s; aliases = a } }
-
-aliases:
-    | a = alias
-      { [a] }
-    | al = aliases; SEMICOLON; a = alias
-      { a::al }
-
-alias:
-    | i1 = ident; AS; i2 = ident
-      { { oldident = i1; newident = i2 } }
+    | s = STRING; SEMICOLON
+      { s }
 
 lincats:
     | (* empty *)      
@@ -71,7 +63,7 @@ lincats:
       { lc }
 
 lincat:
-    | i = ident; EQUAL; t = typ
+    | i = ident; EQUAL; t = typ; SEMICOLON
       { { lincat_name = i; lincat_type = t } }
                               
 params:
@@ -81,7 +73,7 @@ params:
       { p }
 
 param:
-    | i = ident; EQUAL; e = param_enum
+    | i = ident; EQUAL; e = param_enum; SEMICOLON
       { { param_name = i; param_values = e } }
 
 param_enum:
@@ -90,6 +82,10 @@ param_enum:
     | e = param_enum; BAR; i = ident
       { i::e }
 
+standalone_lins:
+    | l = lins; EOF
+      { l }
+      
 lins:
     | (* empty *)      
       { [] }
@@ -97,7 +93,7 @@ lins:
       { l }
 
 lin:
-    | i1 = ident; a = list(lin_arg); COLON; i2 = ident; EQUAL; e = expr
+    | i1 = ident; a = list(lin_arg); COLON; i2 = ident; EQUAL; e = expr; SEMICOLON
       { { lin_name = i1; lin_outc = i2; lin_args = a; lin_expr = e } }
 
 lin_arg:
@@ -144,6 +140,8 @@ expr_node:
       { Erecord r }
     | TABLE; OCURLY; t = table_fields; CCURLY
       { Etable t }
+    | TABLE; i = ident; OBRACK; c = covtable_fields; CBRACK
+      { Ecovtable (i, (List.rev c)) }
 
 record_fields:
     | (* empty *)
@@ -156,10 +154,16 @@ nonempty_record_fields:
       { [r] }
     | re = nonempty_record_fields; SEMICOLON; r = record_field
       { r::re }
+    | re = nonempty_record_fields; SEMICOLON; lock_field
+      { re }
 
 record_field:
     | i = ident; EQUAL; e = expr
       { (i,e) }
+
+lock_field:
+    | i = ident; EQUAL; GFLOCK
+      { [] }
 
 record_decl_fields:
     | (* empty *)
@@ -186,6 +190,12 @@ table_fields:
 table_field:
     | i = ident; BIG_RARROW; e = expr
       { (i,e) }
+
+covtable_fields:
+    | e = expr
+      { [e] }
+    | c = covtable_fields; SEMICOLON; e = expr
+      { e::c }
                               
 ident:
     | i = IDENT

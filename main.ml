@@ -31,10 +31,13 @@ let loop filename =
   let lexbuf = Lexing.from_channel inx in
   lexbuf.lex_curr_p <- { lexbuf.lex_curr_p with pos_fname = filename };
   let gfpm_file = parse_with_error lexbuf in
+  let gfpm_file = Includecc.includecc_file gfpm_file in
   let tgfpm_file = type_with_error gfpm_file in
   let tl1_file = Finfun.tl1_file tgfpm_file in
   let tl2_file = Rec.tl2_file tl1_file in
   let grammar = Convert.convert_file tl2_file in
+  Gfpm.print_file gfpm_file;
+  print_newline ();
   Tgfpm.print_file tgfpm_file;
   print_newline ();
   Tl1.print_file tl1_file;

@@ -13,9 +13,6 @@ type expr = Estring of string
           | Elock of expr
 
 type record = expr array
-                            
-type includecc = Gfpm.includecc (*{ filename: string;
-                   aliases : alias list }*)
 
 type lincat_map = int M.t
        
@@ -26,7 +23,6 @@ type lin = { lin_outc: ident;
 type lin_map = lin M.t
                 
 type file = { name      : ident;
-              includeccs: includecc list;
               lincats   : lincat_map;
               lins      : lin_map }
 

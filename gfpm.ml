@@ -23,6 +23,7 @@ type expr_nod = Estring of string
               | Elambda of ident * ident * expr
               | Erecord of record
               | Etable of table
+              | Ecovtable of ident * expr list
 
 and table = (ident * expr) list
 and record = (ident * expr) list
@@ -30,8 +31,7 @@ and record = (ident * expr) list
 and expr = { expr_node: expr_nod;
              expr_loc : Lexing.position }
                             
-type includecc = { filename: string;
-                   aliases : alias list }
+type includecc = string
 
 type param = { param_name  : ident;
                param_values: ident list }
@@ -80,9 +80,28 @@ let print_expr e =
                              ^ (string_of_expr e) ^ ")"
     | Erecord r        -> (List.fold_left (fun s rr -> s ^ (string_of_record rr) ^ "; ") "Record(" r) ^ ")"
     | Etable t         -> (List.fold_left (fun s tt -> s ^ (string_of_table tt) ^ "; ") "Table(" t) ^ ")"
-  and string_of_record r =
+    | Ecovtable (p, es)-> (List.fold_left (fun s ee -> s ^ (string_of_expr ee) ^ "; ") ("COVTable:" ^ p.id ^ "(") es) ^ ")"
+  and string_of_record r = 
     (fst r).id ^ " = " ^ (string_of_expr (snd r))
   and string_of_table t =
     (fst t).id ^ " => " ^ (string_of_expr (snd t))
   in print_string (string_of_expr e) 
-    
+
+let print_lin l =
+  List.iter (fun (a, t) -> print_string ("(" ^ a ^ " : " ^ t ^ ") "))
+    (List.map (fun (a,b) -> a.id, b.id) l.lin_args);
+  print_string (": " ^ l.lin_outc.id ^ " = ");
+  print_expr l.lin_expr
+
+let print_values p =
+  print_string (List.hd p).id;
+  List.iter (fun v -> print_string (" | " ^ v.id)) (List.tl p)
+                  
+let print_file f =
+  print_string ("<Gfpm file " ^ f.name.id ^ ">\n");
+  print_string "param\n";
+  List.iter (fun p -> print_string ("  " ^ p.param_name.id ^ " = "); print_values p.param_values; print_newline ()) f.params;
+  print_string "lincat\n";
+  List.iter (fun l -> print_string ("  " ^ l.lincat_name.id ^ " = "); print_typ l.lincat_type; print_newline ()) f.lincats;
+  print_string "lin\n";
+  List.iter (fun l -> print_string ("  " ^ l.lin_name.id ^ " "); print_lin l; print_newline ()) f.lins
