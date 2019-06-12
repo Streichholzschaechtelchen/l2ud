@@ -24,6 +24,13 @@ type expr_nod = Estring of string
               | Erecord of record
               | Etable of table
               | Ecovtable of ident * expr list
+              | Eif of expr * expr * expr
+              | Eand of expr * expr
+              | Eor of expr * expr
+              | Enot of expr
+              | Eskip
+              | Etrue
+              | Efalse
 
 and table = (ident * expr) list
 and record = (ident * expr) list
@@ -81,6 +88,17 @@ let print_expr e =
     | Erecord r        -> (List.fold_left (fun s rr -> s ^ (string_of_record rr) ^ "; ") "Record(" r) ^ ")"
     | Etable t         -> (List.fold_left (fun s tt -> s ^ (string_of_table tt) ^ "; ") "Table(" t) ^ ")"
     | Ecovtable (p, es)-> (List.fold_left (fun s ee -> s ^ (string_of_expr ee) ^ "; ") ("COVTable:" ^ p.id ^ "(") es) ^ ")"
+    | Eif (e1, e2, e3) -> "If(" ^ (string_of_expr e1) ^ ", "
+                          ^ (string_of_expr e2) ^ ", "
+                          ^ (string_of_expr e3) ^ ")"
+    | Eand (e1, e2)    -> "And(" ^ (string_of_expr e1) ^ ", "
+                          ^ (string_of_expr e2) ^ ")"
+    | Eor (e1, e2)     -> "Or(" ^ (string_of_expr e1) ^ ", "
+                          ^ (string_of_expr e2) ^ ")"
+    | Enot e           -> "Not(" ^ (string_of_expr e) ^ ")"
+    | Eskip            -> "Skip"
+    | Etrue            -> "True"
+    | Efalse           -> "False"
   and string_of_record r = 
     (fst r).id ^ " = " ^ (string_of_expr (snd r))
   and string_of_table t =

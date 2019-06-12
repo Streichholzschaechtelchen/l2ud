@@ -39,7 +39,10 @@ let flatten_typ (params: Tgfpm.param_map)
                              List.fold_left (fun (cats, acc) v ->
                                  develop (cats, acc) (string_apply i v, t)
                                ) (cats, fields) values
-    | Tgfpm.Trecord _     -> assert false in
+    | Tgfpm.Trecord _
+    | Tgfpm.Tbool
+    | Tgfpm.Tbogus
+    | Tgfpm.Tskip         -> assert false in
   let cats, typ = List.fold_left develop ([Tl1.M.empty], [])
                     (snd (flatten false ("", []) (i, t))) in
   cats, List.sort compare typ
@@ -65,8 +68,9 @@ let update_cats old_cats param values =
         acc
         old_cats)
     []
-    values
-
+    values           
+  
+(* Remove block nodes *)
 let rec remove_block (e: Tgfpm.expr) : Tgfpm.expr =
   match e.expr_node with
     Tgfpm.Estring _ | Tgfpm.Eident _ -> e 
@@ -94,22 +98,42 @@ let rec remove_block (e: Tgfpm.expr) : Tgfpm.expr =
       -> { e with expr_node = Tgfpm.Erecord (List.map (fun (i, e) -> (i, remove_block e)) r) }
     | Tgfpm.Etable t
       -> { e with expr_node = Tgfpm.Etable (List.map (fun (i, e) -> (i, remove_block e)) t) }
+    | Tgfpm.Eif (e1, e2, e3)
+      -> { e with expr_node = Tgfpm.Eif (remove_block e1,
+                                         remove_block e2,
+                                         remove_block e3) }
+    | Tgfpm.Eand (e1, e2)
+      -> { e with expr_node = Tgfpm.Eand (remove_block e1,
+                                          remove_block e2) }
+    | Tgfpm.Eor (e1, e2)
+      -> { e with expr_node = Tgfpm.Eor (remove_block e1,
+                                         remove_block e2) }
+    | Tgfpm.Enot e'
+      -> { e with expr_node = Tgfpm.Enot (remove_block e') }
+    | Tgfpm.Etrue
+    | Tgfpm.Efalse
+    | Tgfpm.Eskip -> e
+    | Tgfpm.Econcrecord _
+    | Tgfpm.Enilrecord
+    | Tgfpm.Econctable _
+    | Tgfpm.Eniltable -> assert false
 
-let tl1_expr (params_: Tgfpm.param_map)
-             (fli: formal_lincat_map)
-             (old_args: (Tgfpm.ident * Tgfpm.ident) list)
-             (new_args: (Tl1.ident * Tl1.ident) list)
-             (e: Tgfpm.expr)
-             (outc: Tgfpm.ident)
-    : Tl1.record * Tl1.ident =
-  (*Flatten record, replacing subrecords fields by dotted fields*)
-  let rec flatten b (pref, acc) (i, (e: Tgfpm.expr)) =
-    match e.expr_node with
-      Tgfpm.Erecord r -> let new_pref = if b then (string_project pref i) else i
-                         in List.fold_left (flatten true) (new_pref, acc) r
-    | _               -> (pref, (i, e)::acc) in
-  let e = remove_block e in
-  let e = snd ( (flatten false) ("", []) (outc, e) ) in
+let rec contains_skip : Tgfpm.record -> bool = function
+    []       -> false
+  | (_,e)::t -> begin match e.expr_node with
+                  Tgfpm.Eskip -> true
+                | _           -> contains_skip t
+                end
+
+(*Pre-compute expression, deleting tables and lambda nodes, simplifying logic*)
+let rec evaluate (params_: Tgfpm.param_map)
+                 (fli: formal_lincat_map)
+                 (old_args: (Tgfpm.ident * Tgfpm.ident) list)
+                 (new_args: (Tl1.ident * Tl1.ident) list)
+                 (outc: Tgfpm.ident)
+                 (m: Tgfpm.ident Tgfpm.M.t) (e: Tgfpm.expr)
+        : Tgfpm.expr =
+  let evaluate = evaluate params_ fli old_args new_args outc in
   let rec search k = function
       []                    -> assert false
     | (k',v)::t when k = k' -> v
@@ -124,57 +148,162 @@ let tl1_expr (params_: Tgfpm.param_map)
                             expr_type = Tgfpm.Tset }
     | _          -> assert false
   in                          
-  (*Pre-compute expression, deleting tables and lambda nodes*)
-  let rec evaluate (m: Tgfpm.ident Tgfpm.M.t) (e: Tgfpm.expr) : Tgfpm.expr = match e.expr_node with
-      Tgfpm.Estring _ -> e
-    | Tgfpm.Eident i  -> begin try { e with expr_node = Tgfpm.Eident (Tgfpm.M.find i m) }
-                               with Not_found -> begin try make_record i e
-                                                       with _ -> e
-                                                 end
-                         end
-    | Tgfpm.Eselect (e1, e2)
-      -> begin let e_e1 = evaluate m e1 and e_e2 = evaluate m e2 in
-               match e_e1.expr_node, e_e2.expr_node with
-                 Tgfpm.Etable t, Tgfpm.Eident i
-                 -> evaluate m (search i t)
-               | Tgfpm.Elambda (i,_,e), Tgfpm.Eident j
-                 -> evaluate (Tgfpm.M.add i j m) e
-               | Tgfpm.Eproject (e', i), Tgfpm.Eident j
-                 -> begin let e_e' = evaluate m e' in
-                          match e_e'.expr_node with
-                            Tgfpm.Eident k -> let new_field = string_apply i j in
-                                              { e with expr_node = Tgfpm.Eproject (e_e', new_field) }
-                          | _              -> assert false
-                    end
-               | _, _ -> assert false
-         end
-    | Tgfpm.Eproject (e', i)
-      -> begin let e_e' = evaluate m e' in
-               match e_e'.expr_node with
-                 Tgfpm.Erecord r
-                 -> evaluate m (search i r)
-               | Tgfpm.Eident j
-                 -> let param_values = fst (Tl1.M.find j fli) in
-                    (try { e with expr_node = Tgfpm.Eident (Tl1.M.find i param_values) }
-                     with Not_found
-                          -> { e with expr_node = Tgfpm.Eproject ({ e' with expr_node = Tgfpm.Eident j }, i) })
-               | Tgfpm.Eproject (e'', i')
-                 -> { e with expr_node = Tgfpm.Eproject (e'', string_project i i') }
-               | _ -> assert false                                    
-         end
-    | Tgfpm.Eblock _ -> assert false
-    | Tgfpm.Econcat (e1, e2)    -> { e with expr_node = Tgfpm.Econcat (evaluate m e1, evaluate m e2) }
-    | Tgfpm.Einterl (e1, e2)    -> { e with expr_node = Tgfpm.Einterl (evaluate m e1, evaluate m e2) }
-    | Tgfpm.Edisj (e1, e2)      -> { e with expr_node = Tgfpm.Edisj (evaluate m e1, evaluate m e2) }
-    | Tgfpm.Elock e             -> { e with expr_node = Tgfpm.Elock (evaluate m e) }
-    | Tgfpm.Elambda (i1, i2, e) -> { e with expr_node = Tgfpm.Elambda (i1, i2, evaluate m e) }
-    | Tgfpm.Erecord r           -> { e with expr_node = Tgfpm.Erecord (List.map (fun (i,e) -> (i, evaluate m e)) r) }
-    | Tgfpm.Etable t            -> { e with expr_node = Tgfpm.Etable (List.map (fun (i,e) -> (i, evaluate m e)) t) }
-  in
+  match e.expr_node with
+    Tgfpm.Estring _ -> e
+  | Tgfpm.Eident i  -> begin try { e with expr_node = Tgfpm.Eident (Tgfpm.M.find i m) }
+                             with Not_found -> begin try make_record i e
+                                                     with _ -> e
+                                               end
+                       end
+  | Tgfpm.Eselect (e1, e2)
+    -> begin let e_e1 = evaluate m e1 and e_e2 = evaluate m e2 in
+             match e_e1.expr_node, e_e2.expr_node with
+               Tgfpm.Eskip   , _
+             | _             , Tgfpm.Eskip
+               -> Tgfpm.skip
+             | Tgfpm.Etable t, Tgfpm.Eident i
+               -> evaluate m (search i t)
+             | Tgfpm.Elambda (i,_,e), Tgfpm.Eident j
+               -> evaluate (Tgfpm.M.add i j m) e
+             | Tgfpm.Eproject (e', i), Tgfpm.Eident j
+               -> begin let e_e' = evaluate m e' in
+                        match e_e'.expr_node with
+                          Tgfpm.Eident k -> let new_field = string_apply i j in
+                                            { e with expr_node = Tgfpm.Eproject (e_e', new_field) }
+                        | _              -> assert false
+                  end
+             | _, _ -> assert false
+       end
+  | Tgfpm.Eproject (e', i)
+    -> begin let e_e' = evaluate m e' in
+             match e_e'.expr_node with
+               Tgfpm.Eskip
+               -> Tgfpm.skip
+             | Tgfpm.Erecord r
+               -> evaluate m (search i r)
+             | Tgfpm.Eident j
+               -> let param_values = fst (Tl1.M.find j fli) in
+                  (try { e with expr_node = Tgfpm.Eident (Tl1.M.find i param_values) }
+                   with Not_found
+                        -> { e with expr_node = Tgfpm.Eproject ({ e' with expr_node = Tgfpm.Eident j }, i) })
+             | Tgfpm.Eproject (e'', i')
+               -> { e with expr_node = Tgfpm.Eproject (e'', string_project i i') }
+             | _ -> assert false                                    
+       end
+  | Tgfpm.Eblock _ -> assert false
+  | Tgfpm.Econcat (e1, e2)    ->
+     let e_e1 = evaluate m e1 and e_e2 = evaluate m e2 in
+     begin match e_e1.expr_node, e_e2.expr_node with
+       Tgfpm.Eskip, _ | _, Tgfpm.Eskip -> Tgfpm.skip
+       | _, _ -> { e with expr_node = Tgfpm.Econcat (e_e1, e_e2) }
+     end
+  | Tgfpm.Einterl (e1, e2)    ->
+     let e_e1 = evaluate m e1 and e_e2 = evaluate m e2 in
+     begin match e_e1.expr_node, e_e2.expr_node with
+       Tgfpm.Eskip, _ | _, Tgfpm.Eskip -> Tgfpm.skip
+       | _, _ -> { e with expr_node = Tgfpm.Einterl (e_e1, e_e2) }
+     end
+  | Tgfpm.Edisj (e1, e2)      ->
+     let e_e1 = evaluate m e1 and e_e2 = evaluate m e2 in
+     begin match e_e1.expr_node, e_e2.expr_node with
+       Tgfpm.Eskip, _ | _, Tgfpm.Eskip -> Tgfpm.skip
+       | _, _ -> { e with expr_node = Tgfpm.Edisj (e_e1, e_e2) }      
+     end
+  | Tgfpm.Elock e'            ->
+     let e_e' = evaluate m e' in
+     begin match e_e'.expr_node with
+       Tgfpm.Eskip -> Tgfpm.skip
+     | _ -> { e with expr_node = Tgfpm.Elock e_e' }
+     end
+  | Tgfpm.Elambda (i1, i2, e') ->
+     let e_e' = evaluate m e' in
+     begin match e_e'.expr_node with
+       Tgfpm.Eskip -> Tgfpm.skip
+     | _ -> { e' with expr_node = Tgfpm.Elambda (i1, i2, e_e') }
+     end
+  | Tgfpm.Erecord r           ->
+     let e_r = List.map (fun (i,e) -> (i, evaluate m e)) r in
+     begin if contains_skip e_r
+           then Tgfpm.skip
+           else { e with
+                  expr_node = Tgfpm.Erecord e_r }
+     end
+  | Tgfpm.Etable t            ->
+     { e with expr_node = Tgfpm.Etable (List.map (fun (i,e) -> (i, evaluate m e)) t) }
+  | Tgfpm.Eif (e1, e2, e3)    ->
+     begin let e_e1 = evaluate m e1
+           and e_e2 = evaluate m e2
+           and e_e3 = evaluate m e3 in 
+           match e_e1.expr_node, e_e2.expr_node, e_e3.expr_node with
+             Tgfpm.Etrue  , Tgfpm.Eskip, _           -> Tgfpm.skip
+           | Tgfpm.Etrue  , _          , _           -> e_e2
+           | Tgfpm.Efalse , _          , Tgfpm.Eskip -> e_e3
+           | Tgfpm.Efalse , _          , _           -> e_e3
+           | _            , Tgfpm.Eskip, Tgfpm.Eskip -> Tgfpm.skip
+           | _
+             -> { e with expr_node = Tgfpm.Eif (e_e1, e_e2, e_e3) }
+     end
+  | Tgfpm.Eand (e1, e2)       ->
+     begin let e_e1 = evaluate m e1 and e_e2 = evaluate m e2 in
+           match e_e1.expr_node, e_e2.expr_node with
+             Tgfpm.Efalse, _          
+           | _           , Tgfpm.Efalse
+             -> { e with expr_node = Tgfpm.Efalse }
+           | Tgfpm.Etrue , _
+             -> e_e2
+           | _           , Tgfpm.Etrue
+             -> e_e1
+           | _           , _
+             -> { e with expr_node = Tgfpm.Eand (e_e1, e_e2) }
+     end
+  | Tgfpm.Eor (e1, e2)        ->
+     begin let e_e1 = evaluate m e1 and e_e2 = evaluate m e2 in
+           match e_e1.expr_node, e_e2.expr_node with
+             Tgfpm.Etrue , _
+           | _           , Tgfpm.Etrue
+             -> { e with expr_node = Tgfpm.Etrue }
+           | Tgfpm.Efalse, _
+             -> e_e2
+           | _           , Tgfpm.Efalse
+             -> e_e1
+           | _           , _
+             -> { e with expr_node = Tgfpm.Eor (e_e1, e_e2) }
+     end
+  | Tgfpm.Enot e'             ->
+     begin let e_e' = evaluate m e' in
+           match e_e'.expr_node with
+             Tgfpm.Etrue  -> { e with expr_node = Tgfpm.Efalse }
+           | Tgfpm.Efalse -> { e with expr_node = Tgfpm.Etrue }
+           | _            -> { e with expr_node = Tgfpm.Enot e_e' }
+     end
+  | Tgfpm.Etrue
+  | Tgfpm.Efalse
+  | Tgfpm.Eskip
+    -> e
+  | _ -> assert false
+
+exception Skip
+
+let tl1_expr (params_: Tgfpm.param_map)
+             (fli: formal_lincat_map)
+             (old_args: (Tgfpm.ident * Tgfpm.ident) list)
+             (new_args: (Tl1.ident * Tl1.ident) list)
+             (e: Tgfpm.expr)
+             (outc: Tgfpm.ident)
+    : Tl1.record * Tl1.ident =
+  let evaluate = evaluate params_ fli old_args new_args outc in
+  (*Flatten record, replacing subrecords fields by dotted fields*)
+  let rec flatten b (pref, acc) (i, (e: Tgfpm.expr)) =
+    match e.expr_node with
+      Tgfpm.Erecord r -> let new_pref = if b then (string_project pref i) else i
+                         in List.fold_left (flatten true) (new_pref, acc) r
+    | _               -> (pref, (i, e)::acc) in
+  let e = snd ( (flatten false) ("", []) (outc, e) ) in
   (*Convert Tgfpm.expr -> Tl1.expr*)
   let rec convert (e: Tgfpm.expr) =
     match e.expr_node with
-      Tgfpm.Estring s        -> Tl1.Estring s
+      Tgfpm.Eskip            -> raise Skip
+    | Tgfpm.Estring s        -> Tl1.Estring s
     | Tgfpm.Eident i         -> Tl1.Eident i
     | Tgfpm.Eproject (e', j) -> begin match e'.expr_node with
                                   Tgfpm.Eident i -> Tl1.Eproject (i, j)
@@ -214,6 +343,57 @@ let tl1_expr (params_: Tgfpm.param_map)
   let new_outc = string_formal outc params in
   let new_rcrd = Tl1.M.bindings fields in
   new_rcrd, new_outc
+            
+let rec tl1_log (e: Tgfpm.expr) : Tl1.log option =
+  match e.expr_node with
+    Tgfpm.Etrue            -> None
+  | Tgfpm.Efalse           -> raise Skip
+  | Tgfpm.Eand (e1, e2)    -> begin match tl1_log e1, tl1_log e2 with
+                                Some e1', Some e2' -> Some (Tl1.Land (e1', e2'))
+                              | _       , _        -> assert false
+                              end
+  | Tgfpm.Eor (e1, e2)     -> begin match tl1_log e1, tl1_log e2 with
+                                Some e1', Some e2' -> Some (Tl1.Lor (e1', e2'))
+                              | _       , _        -> assert false
+                              end
+  | Tgfpm.Enot e'          -> begin match tl1_log e' with
+                                Some e'' -> Some (Tl1.Lnot e'')
+                              | _        -> assert false
+                              end
+  | Tgfpm.Eproject (e', j) -> begin match e'.expr_node with
+                                  Tgfpm.Eident i -> Some (Tl1.Lproject (i, j))
+                                | _              -> assert false
+                              end
+  | _                      -> assert false
+                                     
+let distribute (e: Tgfpm.expr) : (Tgfpm.expr * Tgfpm.expr) list =
+  print_string "\ndistribute"; print_newline ();
+  Tgfpm.print_expr_node (e.expr_node); print_newline();
+  print_string "chainified"; print_newline ();
+  Tgfpm.print_expr_node (e |> Prenex.chainify).expr_node; print_newline ();
+  print_string "prenexified"; print_newline ();
+  Tgfpm.print_expr_node (e |> Prenex.chainify |> Prenex.prenexify).expr_node; print_newline ();
+  (* Convert formula into PNF *)
+  let p_e = e |> Prenex.chainify |> Prenex.prenexify |> Prenex.unchainify in
+  print_string "unchainified"; print_newline ();
+  Tgfpm.print_expr_node (p_e.expr_node); print_string "\n\n";
+  let mapand l =
+    List.map (fun (lo, e) -> (Tgfpm.{ expr_node = Tgfpm.Eand (l, lo);
+                                      expr_type = Tgfpm.Tbool }, e)) in
+  let not_ l =
+    Tgfpm.{ expr_node = Tgfpm.Enot l;
+            expr_type = Tgfpm.Tbool } in
+  let true_ =
+    Tgfpm.{ expr_node = Tgfpm.Etrue;
+            expr_type = Tgfpm.Tbool } in
+  (* Take a formula in PNF and returns a list of logic * expression *)
+  (* Both logic and expression are of type Tgfpm.expr at that point *)
+  let rec aux (e: Tgfpm.expr) = match e.expr_node with
+      Tgfpm.Eif (e1, e2, e3) -> let e2' = aux e2 and e3' = aux e3 in
+                                (mapand e1 e2')@(mapand (not_ e1) e3')
+    | Tgfpm.Eskip            -> []
+    | _                      -> [ true_, e ]
+  in aux p_e
                                               
 let tl1_lin (params: Tgfpm.param_map)
             (fli: formal_lincat_map)
@@ -236,12 +416,20 @@ let tl1_lin (params: Tgfpm.param_map)
   let cats_nuples = List.fold_left cartesian [[]] all_cats in
   let handle_nuple (j, bdd) nuple =
     let nuple = List.rev nuple in
-    let lin_ident = i ^ "#" ^ (string_of_int j) in
     let lin_args = List.map2 (fun a b -> (fst a,b)) t_lin_args nuple in
     let fli = List.fold_left2 (fun m a b -> Tl1.M.add (fst a) (Tl1.M.find b fli)  m) Tl1.M.empty lin_args nuple in
-    let lin_rcrd, lin_outc = tl1_expr params fli t_lin_args lin_args t_lin_expr t_lin_outc in
-    let new_lin = Tl1.{ lin_outc; lin_args; lin_rcrd } in
-    (j+1, Tl1.M.add lin_ident new_lin bdd)
+    let lin_logs_and_exprs = distribute (remove_block t_lin_expr) in
+    let handle_log_and_expr (j, bdd) (l, e) =
+      let lin_ident = i ^ "#" ^ (string_of_int j) in
+      print_string lin_ident; print_newline ();
+      Tgfpm.print_expr_node ((l:Tgfpm.expr).expr_node); print_newline ();
+      Tgfpm.print_expr_node ((e:Tgfpm.expr).expr_node); print_newline ();
+      try let lin_rcrd, lin_outc = tl1_expr params fli t_lin_args lin_args e t_lin_outc in
+          let lin_logc = tl1_log (evaluate params fli t_lin_args lin_args t_lin_outc Tgfpm.M.empty l) in
+          let new_lin = Tl1.{ lin_outc; lin_args; lin_rcrd; lin_logc } in
+          (j+1, Tl1.M.add lin_ident new_lin bdd)
+      with Skip -> (j, bdd)
+    in List.fold_left handle_log_and_expr (j, bdd) lin_logs_and_exprs      
   in snd (List.fold_left handle_nuple (0, acc) cats_nuples)
    
 let tl1_lins (params: Tgfpm.param_map)

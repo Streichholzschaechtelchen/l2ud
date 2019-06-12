@@ -21,7 +21,7 @@ let c = ['A'-'Z']
 let s = ['a'-'z']
 let i = (l|d)
 let whitespace = [' ' '\t']+
-let identifier = (l|'_'|'\'')(i|'_'|'\'')*
+let identifier = (l|'_')(i|'_'|'\'')*
 
 (* l2ud does not support integers *)
 rule read = parse
@@ -49,6 +49,15 @@ rule read = parse
   | ']'        { CBRACK }
   | '|'        { BAR }
   | "<>"       { GFLOCK }
+  | "and"      { AND }
+  | "or"       { OR }
+  | "not"      { NOT }
+  | "True"     { TRUE }
+  | "False"    { FALSE }
+  | "if"       { IF }
+  | "then"     { THEN }
+  | "else"     { ELSE }
+  | "skip"     { SKIP }
   | "Set"      { SET }
   | "concrete" { CONCRETE } (* No abstract syntax, no flags, no printname *)
   | "lin"      { LIN }

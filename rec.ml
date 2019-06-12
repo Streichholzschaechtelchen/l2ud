@@ -11,7 +11,22 @@ let rec index e = function
     []              -> raise Not_found
   | h::t when h = e -> 0
   | _::t            -> 1 + (index e t)
-      
+
+let rec tl2_log (lincats: Tl1.lincat_map)
+                (args: (Tl1.ident * Tl1.ident) list)
+                (l: Tl1.log option)
+        : Tl2.log option =
+  let rec aux = function
+    Tl1.Land (l1, l2)     -> Tl2.Land (aux l1, aux l2)
+  | Tl1.Lor (l1, l2)      -> Tl2.Lor (aux l1, aux l2)
+  | Tl1.Lnot l'           -> Tl2.Lnot (aux l')
+  | Tl1.Lproject (i1, i2) -> let i = index i2 (Tl1.M.find (search i1 args)
+                                                 lincats) in
+                             Tl2.Lproject (i1, i)
+  in match l with
+       None   -> None
+     | Some l'-> Some (aux l')
+                                       
 let rec tl2_expr (lincats: Tl1.lincat_map)
                  (args: (Tl1.ident * Tl1.ident) list)
                  (e: Tl1.expr)
@@ -39,8 +54,9 @@ let tl2_record (lincats: Tl1.lincat_map)
 let tl2_lin (lincats: Tl1.lincat_map) (l: Tl1.lin) : Tl2.lin =
   let lin_outc = l.lin_outc
   and lin_args = l.lin_args
+  and lin_logc = tl2_log lincats l.lin_args l.lin_logc
   and lin_rcrd = tl2_record lincats l.lin_args l.lin_rcrd in
-  Tl2.{ lin_outc; lin_args; lin_rcrd }
+  Tl2.{ lin_outc; lin_args; lin_logc; lin_rcrd }
 
 let tl2_file (file: Tl1.file) : Tl2.file =
   let name = file.name

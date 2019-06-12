@@ -32,7 +32,16 @@ module TypingErrors = struct
                     "Lincat argument name conflicts with an already bound name" (*25*);
                     "Computed type of lin does not match declared type" (*26*);
                     "Course-of-value tables must be label by a parameter type" (*27*);
-                    "Number of items in course-of-value table does not match number of values in parameter type" (*28*);               
+                    "Number of items in course-of-value table does not match number of values in parameter type" (*28*);
+                    "Condition of if-then-else expression must be boolean" (*29*);
+                    "Inconsistent types in then and else branches" (*30*);
+                    "Inconsistent types in if-then-else expression" (*31*);
+                    "Left-hand side of boolean operator must be boolean" (*32*);
+                    "Right-hand side of boolean operator must be boolean" (*33*);
+                    "Operands of boolean operator must be boolean" (*34*);
+                    "Operand of boolean operator must be boolean" (*35*);
+                    "Record fields cannot be boolean" (*36*);
+                    "Type boolean is not allowed in table" (*37*);       
                  |]
                    
   let throw ?(info="") (loc: Lexing.position) err_id =
@@ -60,13 +69,12 @@ let type_op (t_e1: Tgfpm.expr)
             (loc1: Lexing.position)
             (loc2: Lexing.position)
     : Tgfpm.expr =
-  begin match t_e1.expr_type, t_e2.expr_type with
-    Tset, Tset -> { expr_node = t_e;
-                    expr_type = Tset }
-  | Tset, _    -> TypingErrors.throw loc2 9
-  | _   , Tset -> TypingErrors.throw loc1 10
-  | _   , _    -> TypingErrors.throw loc1 11
-  end
+  match t_e1.expr_type, t_e2.expr_type with
+    Tgfpm.Tset, Tgfpm.Tset -> { expr_node = t_e;
+                                expr_type = Tset }
+  | Tgfpm.Tset, _          -> TypingErrors.throw loc2 9
+  | _         , Tgfpm.Tset -> TypingErrors.throw loc1 10
+  | _         , _          -> TypingErrors.throw loc1 11
   
 let rec type_expr (params: Tgfpm.param_map) (expr: Gfpm.expr)
         : Tgfpm.expr =
@@ -128,8 +136,11 @@ let rec type_expr (params: Tgfpm.param_map) (expr: Gfpm.expr)
          Tgfpm.Ttyp -> begin Hashtbl.add types i1.id (Tparam i2.id);
                              let t_e = type_expr e in
                              Hashtbl.remove types i1.id;
-                             { expr_node = Tgfpm.Elambda (i1.id, i2.id, t_e);
-                               expr_type = Tgfpm.Ttable (i2.id, t_e.expr_type) }
+                             match t_e.expr_type with
+                               Tgfpm.Tbool -> TypingErrors.throw e.expr_loc 37
+                             | _ ->                                
+                                { expr_node = Tgfpm.Elambda (i1.id, i2.id, t_e);
+                                  expr_type = Tgfpm.Ttable (i2.id, t_e.expr_type) }
                        end
        | _          -> TypingErrors.throw i2.id_loc 13
        end
@@ -139,9 +150,11 @@ let rec type_expr (params: Tgfpm.param_map) (expr: Gfpm.expr)
              if List.mem i.id djavu
              then TypingErrors.throw ~info:i.id i.id_loc 14
              else let t_e = type_expr e in
-                  (i.id::djavu,
-                   (i.id, t_e)::r_node,
-                   (i.id, t_e.expr_type)::r_type)
+                  match t_e.expr_type with
+                    Tgfpm.Tbool -> TypingErrors.throw e.expr_loc 36
+                  | _           -> (i.id::djavu,
+                                    (i.id, t_e)::r_node,
+                                    (i.id, t_e.expr_type)::r_type)
            ) ([], [], []) r in
        { expr_node = Tgfpm.Erecord (List.sort compare r_node);
          expr_type = Tgfpm.Trecord (List.sort compare r_type) }
@@ -152,7 +165,9 @@ let rec type_expr (params: Tgfpm.param_map) (expr: Gfpm.expr)
              then TypingErrors.throw ~info:i.id i.id_loc 16
              else begin let t_i = type_ident i and t_e = type_expr e in
                         match t_i, t_e.expr_type, param, typ with
-                          Tgfpm.Tparam p, _, None, None ->
+                          _, Tgfpm.Tbool, _, _ ->
+                           TypingErrors.throw e.expr_loc 37
+                        | Tgfpm.Tparam p, _, None, None ->
                            i.id::djavu, (i.id, t_e)::t_node, Some p, Some t_e.expr_type
                         | Tgfpm.Tparam p1, t1, Some p2, Some t2
                              when p1 = p2 && t1 = t2 ->
@@ -173,28 +188,92 @@ let rec type_expr (params: Tgfpm.param_map) (expr: Gfpm.expr)
        in { expr_node = Tgfpm.Etable (List.sort compare t_node);
             expr_type = Tgfpm.Ttable (p, t) }
   | Gfpm.Ecovtable (p, es)
-    -> let t_p = type_ident p in
-       match t_p with
-         Tgfpm.Ttyp ->
-          begin let values = Tgfpm.M.find p.id params in
-                let t_es, typ = List.fold_left (fun (t_es, typ) e ->
-                                    let t_e = type_expr e in
-                                    match t_e.expr_type, typ with
-                                      _ , None
-                                      -> t_e::t_es, Some t_e.expr_type
-                                    | t1, Some t2 when t1 = t2
-                                      -> t_e::t_es, Some t2
-                                    | _ , _
-                                      -> TypingErrors.throw e.expr_loc 17)
-                                  ([], None) es
-                in match (List.length t_es) - (List.length values), typ with
-                     0, Some t -> let table = List.map2 (fun a b -> (a, b)) values t_es
-                                  in  { expr_node = Tgfpm.Etable table;
-                                        expr_type = Tgfpm.Ttable (p.id, t) }
-                   | _, Some t -> TypingErrors.throw p.id_loc 28
-                   | _, _      -> assert false
-          end
-       | _          -> TypingErrors.throw p.id_loc 27
+    -> begin let t_p = type_ident p in
+             match t_p with
+               Tgfpm.Ttyp ->
+                begin let values = Tgfpm.M.find p.id params in
+                      let t_es, typ = List.fold_left (fun (t_es, typ) e ->
+                                          let t_e = type_expr e in
+                                          match t_e.expr_type, typ with
+                                            Tgfpm.Tbool, _
+                                            -> TypingErrors.throw e.expr_loc 37
+                                          | _, None
+                                            -> t_e::t_es, Some t_e.expr_type
+                                          | t1, Some t2 when t1 = t2
+                                            -> t_e::t_es, Some t2
+                                          | _ , _
+                                            -> TypingErrors.throw e.expr_loc 17)
+                                        ([], None) es
+                      in match (List.length t_es) - (List.length values), typ with
+                           0, Some t -> let table = List.map2 (fun a b -> (a, b)) values t_es
+                                        in  { expr_node = Tgfpm.Etable table;
+                                              expr_type = Tgfpm.Ttable (p.id, t) }
+                         | _, Some t -> TypingErrors.throw p.id_loc 28
+                         | _, _      -> assert false
+                end
+             | _          -> TypingErrors.throw p.id_loc 27
+       end
+  | Gfpm.Eif (e1, e2, e3)
+    -> begin let t_e1 = type_expr e1
+             and t_e2 = type_expr e2
+             and t_e3 = type_expr e3 in
+             let ctb = Tgfpm.can_cast t_e1.expr_type Tgfpm.Tbool in
+             match ctb, t_e2.expr_type, t_e3.expr_type with
+               true, t2, t3 when Tgfpm.can_cast t2 t3
+               -> Tgfpm.{ expr_node = Tgfpm.Eif (t_e1, t_e2, t_e3);
+                          expr_type = t3 }
+             | true, t2, t3 when Tgfpm.can_cast t3 t2
+               -> Tgfpm.{ expr_node = Tgfpm.Eif (t_e1, t_e2, t_e3);
+                          expr_type = t2 }
+             | _, t2, t3 when t2 = t3
+               -> TypingErrors.throw expr.expr_loc 29
+             | true, _, _
+               -> TypingErrors.throw expr.expr_loc 30
+             | _, _, _
+               -> TypingErrors.throw expr.expr_loc 31
+       end
+  | Gfpm.Eand (e1, e2)
+    -> begin let t_e1 = type_expr e1
+             and t_e2 = type_expr e2 in
+             let ctb1 = Tgfpm.can_cast t_e1.expr_type Tgfpm.Tbool
+             and ctb2 = Tgfpm.can_cast t_e2.expr_type Tgfpm.Tbool in
+             match ctb1, ctb2 with
+               true , true  -> Tgfpm.{ expr_node = Tgfpm.Eand (t_e1, t_e2);
+                                     expr_type = Tgfpm.Tbool }
+             | false, true  -> TypingErrors.throw e1.expr_loc 32
+             | true , false -> TypingErrors.throw e2.expr_loc 33
+             | false, false -> TypingErrors.throw expr.expr_loc 34
+       end
+  | Gfpm.Eor (e1, e2)
+    -> begin let t_e1 = type_expr e1
+             and t_e2 = type_expr e2 in
+             let ctb1 = Tgfpm.can_cast t_e1.expr_type Tgfpm.Tbool
+             and ctb2 = Tgfpm.can_cast t_e2.expr_type Tgfpm.Tbool in
+             match ctb1, ctb2 with
+               true , true  -> Tgfpm.{ expr_node = Tgfpm.Eor (t_e1, t_e2);
+                                       expr_type = Tgfpm.Tbool }
+             | false, true  -> TypingErrors.throw e1.expr_loc 32
+             | true , false -> TypingErrors.throw e2.expr_loc 33
+             | false, false -> TypingErrors.throw expr.expr_loc 34
+       end
+  | Gfpm.Enot e'
+    -> begin let t_e' = type_expr e' in
+             let ctb = Tgfpm.can_cast t_e'.expr_type Tgfpm.Tbool in
+             match ctb with
+               true  -> Tgfpm.{ expr_node = Tgfpm.Enot t_e';
+                                expr_type = Tgfpm.Tbool }
+             | false -> TypingErrors.throw e'.expr_loc 35
+       end
+  | Gfpm.Etrue
+    -> { expr_node = Tgfpm.Etrue;
+         expr_type = Tgfpm.Tbool }
+  | Gfpm.Efalse
+    -> { expr_node = Tgfpm.Efalse;
+         expr_type = Tgfpm.Tbool }
+  | Gfpm.Eskip
+    -> { expr_node = Tgfpm.Eskip;
+         expr_type = Tgfpm.Tskip }
+                                          
 let rec type_typ (t: Gfpm.typ) : Tgfpm.typ =
   match t with
     Gfpm.Tset     -> Tgfpm.Tset

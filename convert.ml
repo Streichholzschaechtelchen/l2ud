@@ -49,15 +49,48 @@ let rec convert_expr (e: Tl2.expr) : G.idlexpr =
 
 let convert_assoc_expr (e: Tl2.expr) : G.idlexpr =
   assoc_expr (convert_expr e)
+
+let rec assoc_log (e: G.logic) : G.logic =
+  match e with
+    G.LBool _
+  | G.LN (_,_) -> e
+  | G.LAnd es  -> let es' = List.fold_left
+                              (fun acc e
+                               -> match (assoc_log e) with
+                                    G.LAnd es' -> es' @ acc
+                                  | e'         -> e'::acc)
+                              [] es
+                  in G.LAnd es'
+  | G.LOr es   -> let es' = List.fold_left
+                              (fun acc e
+                               -> match (assoc_log e) with
+                                    G.LOr es' -> es' @ acc
+                                  | e'        -> e'::acc)
+                              [] es
+                  in G.LOr es'
+  | G.LNot e   -> let e' = assoc_log e in
+                  match e' with
+                   G.LNot e'' -> e''
+                  | _          -> G.LNot e'
+
+let rec convert_log (l: Tl2.log) : G.logic =
+  match l with
+    Tl2.Land (l1, l2)    -> G.LAnd ([convert_log l1; convert_log l2])
+  | Tl2.Lor (l1, l2)     -> G.LOr ([convert_log l1; convert_log l2])
+  | Tl2.Lnot l'          -> G.LNot (convert_log l')
+  | Tl2.Lproject (id, i) -> G.LN (id, i)
   
 let add_rule_from_lin _ (l: Tl2.lin) (rs: formal_rule_map) =
   let lin_outc = l.lin_outc
-  and lin_rcrd = l.lin_rcrd in
+  and lin_rcrd = l.lin_rcrd
+  and lin_logc = l.lin_logc in
   let rules = G.M.find lin_outc rs in
   let incats = l.lin_args in
   let exprs = Array.map convert_assoc_expr lin_rcrd in
-  let rule = G.ARule (G.{ incats; exprs }) in
-  Formal.G.M.add lin_outc (rule::rules) rs
+  let rule = match lin_logc with
+      None   -> G.ARule (G.{ incats; exprs })
+    | Some l -> G.ERule (G.{ incats; exprs; cndtn = convert_log l })
+  in Formal.G.M.add lin_outc (rule::rules) rs
 
 let convert_file (file: Tl2.file) : G.grammar =
   let rules = Tl2.M.fold fill_in_lincat file.lincats G.M.empty in

@@ -11,10 +11,12 @@
 %token CONCRETE INCLUDECC
 %token LIN LINCAT PARAM
 %token TABLE
+%token TRUE FALSE
+%token IF THEN ELSE SKIP
 
 (* Symbols *)
 %token OPAREN CPAREN OCURLY CCURLY OBRACK CBRACK
-%token COLON SEMICOLON BAR
+%token AND OR NOT
 %token EQUAL
 %token BIG_RARROW
 %token GFLOCK
@@ -27,13 +29,17 @@
 %token DISJUNCTION
 %token EXCLMARK
 %token DOT
+%token COLON SEMICOLON BAR
 
 (* Precedence *)       
-%right LOCK
 %left BIG_RARROW
-%left PLUSPLUS
-%left BARBAR
 %left DISJUNCTION
+%left BARBAR
+%left PLUSPLUS
+%right LOCK
+%left OR
+%left AND
+%left NOT
 %left EXCLMARK
 %left DOT
 
@@ -45,8 +51,9 @@
                     
 file:
     | CONCRETE; i = ident; EQUAL; OCURLY; ic = includeccs; p = params; lc = lincats; l = lins; CCURLY; EOF
-                                                                                       { { name = i; includeccs = ic; lincats = lc; params = p; lins = l } }
-                                                                                 includeccs:
+      { { name = i; includeccs = ic; lincats = lc; params = p; lins = l } }
+
+includeccs:
     | (* empty *)
       { [] }
     | INCLUDECC; i = list(includecc)
@@ -142,6 +149,20 @@ expr_node:
       { Etable t }
     | TABLE; i = ident; OBRACK; c = covtable_fields; CBRACK
       { Ecovtable (i, (List.rev c)) }
+    | IF; e1 = expr; THEN; e2 = expr; ELSE; e3 = expr
+      { Eif (e1, e2, e3) }
+    | e1 = expr; AND; e2 = expr
+      { Eand (e1, e2) }
+    | e1 = expr; OR; e2 = expr
+      { Eor (e1, e2) }
+    | NOT; e1 = expr
+      { Enot e1 }
+    | SKIP
+      { Eskip }
+    | TRUE
+      { Etrue }
+    | FALSE
+      { Efalse }
 
 record_fields:
     | (* empty *)

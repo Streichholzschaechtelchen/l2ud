@@ -11,6 +11,11 @@ type alias = { oldident: ident;
                newident: ident }
   
 type typ = ident list
+
+type log = Land of log * log
+         | Lor of log * log
+         | Lnot of log
+         | Lproject of ident * ident
   
 type expr = Estring of string
           | Eident of ident
@@ -26,6 +31,7 @@ type lincat_map = typ M.t
        
 type lin = { lin_outc: ident;
              lin_args: (ident * ident) list;
+             lin_logc: log option;
              lin_rcrd: record }
 
 type lin_map = lin M.t
@@ -58,10 +64,23 @@ let print_rcrd r =
     print_string i; print_string " = "; print_expr e; print_string "; "
   in print_string "{ "; List.iter print_field r; print_string "}"
 
+let print_logc l =
+  let rec string_of_logc = function
+      Land (l1, l2)    -> "And(" ^ (string_of_logc l1) ^ ", "
+                         ^ (string_of_logc l2) ^ ")"
+    | Lor (l1, l2)     -> "Or(" ^ (string_of_logc l1) ^ ", "
+                         ^ (string_of_logc l2) ^ ")"
+    | Lnot l'          -> "Not(" ^ (string_of_logc l') ^ ")"
+    | Lproject (i1, i2)-> "Project(" ^ i1 ^ ", " ^ i2 ^ ")"
+  in match l with
+       None -> ()
+     | Some l' -> print_string (" if " ^ (string_of_logc l'))
+
 let print_lin l =
   List.iter (fun (a, t) -> print_string ("(" ^ a ^ " : " ^ t ^ ") ")) l.lin_args;
   print_string (": " ^ l.lin_outc ^ " = ");
-  print_rcrd l.lin_rcrd
+  print_rcrd l.lin_rcrd;
+  print_logc l.lin_logc
 
 let print_file f =
   print_string ("<Tl1 file " ^ f.name ^ ">\n");

@@ -12,10 +12,20 @@ type alias = { oldident: ident;
   
 type typ = Ttyp  (* the type of finite types *)
          | Tset
+         | Tbool
+         | Tskip
          | Tparam of ident (* the type of param values *)
          | Ttable of ident * typ
          | Trecord of (ident * typ) list
-  
+         | Tbogus (* placeholder for prenex *)
+
+let can_cast t1 t2 = match t1, t2 with
+    t    , u     when t = u -> true
+  | Tset , Tbool            -> true
+  | Tskip, Tbool            -> false
+  | Tskip, _                -> true
+  | _    , _                -> false
+       
 type expr = { expr_node: expr_nod;
               expr_type: typ }
                
@@ -31,6 +41,17 @@ and expr_nod = Estring of string
              | Elambda of ident * ident * expr
              | Erecord of record
              | Etable of table
+             | Eif of expr * expr * expr
+             | Eand of expr * expr
+             | Eor of expr * expr
+             | Enot of expr
+             | Eskip
+             | Etrue
+             | Efalse
+             | Econcrecord of (ident * expr) * expr (*Only used in prenex.ml*)
+             | Enilrecord                           (*Only used in prenex.ml*)
+             | Econctable of (ident * expr) * expr  (*Only used in prenex.ml*)
+             | Eniltable                            (*Only used in prenex.ml*)
 
 and table = (ident * expr) list
 and record = (ident * expr) list
@@ -50,6 +71,9 @@ type file = { name      : ident;
               params    : param_map;
               lins      : lin_map }
 
+let skip = { expr_node = Eskip;
+             expr_type = Tskip }
+
 let print_ident = print_string
 
 let print_values p =
@@ -60,9 +84,12 @@ let print_typ t =
   let rec string_of_typ = function
       Ttyp -> "Typ"
     | Tset -> "Set"
+    | Tbool -> "Bool"
+    | Tskip -> "Skip"
     | Tparam i -> i
     | Ttable (i,t) -> i ^ " => " ^ (string_of_typ t)
     | Trecord l -> (List.fold_left (fun s (i,t) -> s ^ i ^ " : " ^ (string_of_typ t) ^ "; ") "{ " l) ^ "}"
+    | Tbogus -> "Bogus"
   in print_string (string_of_typ t)
 
 let print_expr_node e =
@@ -85,6 +112,26 @@ let print_expr_node e =
                              ^ (string_of_expr_node e.expr_node) ^ ")"
     | Erecord r        -> (List.fold_left (fun s rr -> s ^ (string_of_record rr) ^ "; ") "Record(" r) ^ ")"
     | Etable t         -> (List.fold_left (fun s tt -> s ^ (string_of_table tt) ^ "; ") "Table(" t) ^ ")"
+    | Eif (e1, e2, e3) -> "If(" ^ (string_of_expr_node e1.expr_node) ^ ", "
+                          ^ (string_of_expr_node e2.expr_node) ^ ", "
+                          ^ (string_of_expr_node e3.expr_node) ^ ")"
+    | Eand (e1, e2)    -> "And(" ^ (string_of_expr_node e1.expr_node) ^ ", "
+                          ^ (string_of_expr_node e2.expr_node) ^ ")"
+    | Eor (e1, e2)     -> "Or(" ^ (string_of_expr_node e1.expr_node) ^ ", "
+                          ^ (string_of_expr_node e2.expr_node) ^ ")"
+    | Enot e           -> "Not(" ^ (string_of_expr_node e.expr_node) ^ ")"
+    | Eskip            -> "Skip"
+    | Etrue            -> "True"
+    | Efalse           -> "False"
+    | Enilrecord       -> "NIL"
+    | Eniltable        -> "NIL"
+    | Econcrecord(r, e)-> "(" ^ (fst r) ^ " = "
+                          ^ (string_of_expr_node (snd r).expr_node)
+                          ^ ")::" ^ (string_of_expr_node e.expr_node)
+    | Econctable(r, e) -> "(" ^ (fst r) ^ " => "
+                          ^ (string_of_expr_node (snd r).expr_node)
+                          ^ ")::" ^ (string_of_expr_node e.expr_node)
+
   and string_of_record r =
     (fst r) ^ " = " ^ (string_of_expr_node (snd r).expr_node)
   and string_of_table t =
