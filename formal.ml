@@ -3,6 +3,7 @@ module type Symbol = sig
   type t
   val compare: t -> t -> int
   val print  : t -> unit
+  val lock_labels: < reset: unit -> unit; get: unit -> t >
 
 end
               
@@ -38,6 +39,8 @@ module EIDLPMCFG (T: Symbol) (N: Symbol) = struct
   module S = Set.Make(Dtlt)
   module DTLTMS = Set.Make(Dtltm)
 
+  (* 1. FRONTEND GRAMMAR *)
+
   type idlexpr = E
                | T of term
                | N of nonterm * int
@@ -63,6 +66,24 @@ module EIDLPMCFG (T: Symbol) (N: Symbol) = struct
                                            
   type grammar = { rules: (rule list) M.t;
                    start: nonterm }
+
+  (* 2. BACKEND GRAMMAR (WITH SEPARATE LOCKS) *)
+  (* Logic is not yet implemented *)
+
+  type idlexpr' = E'
+                | T' of term
+                | N' of nonterm * int
+                | C' of idlexpr' list
+                | I' of idlexpr' list
+                | D' of idlexpr' list
+
+  type rule' = { incats': (nonterm * nonterm) list;
+                 exprs': (idlexpr' * bool) array }
+
+  type grammar' = { rules': (rule' list) M.t;
+                    start': nonterm }
+
+  (* 3. LINEARIZATION FUNCTIONS *)
 
   (* Erase diamonds, returning list of terminals and non-terminals *)
   let sigma sl =
@@ -214,6 +235,62 @@ module EIDLPMCFG (T: Symbol) (N: Symbol) = struct
   let language g =
     S.map (Array.map sigma) (linearize g.rules g.start)
 
+  (* 4. CONVERSION BETWEEN GRAMMAR FORMATS *)
+
+  (* Add (category name -> rule) mapping to rule map *)
+  let append_rule cat r rs =
+    M.update cat (function None -> Some [r] | Some rl -> Some (r::rl)) rs
+
+  (* Convert IDL expressions and rules to the new format *)
+  let rec convert_idlexpr (acc, rs, incats) =
+    let rec aux (acc, rs, incats) = function
+        E       -> (E'::acc, rs, incats)
+      | T t     -> ((T' t)::acc, rs, incats)
+      | N (n,i) -> ((N' (n,i))::acc, rs, incats)
+      | C ies   -> let ies', rs, incats = fold_aux rs incats ies in
+                   ((C' (List.rev ies'))::acc, rs, incats)
+      | I ies   -> let ies', rs, incats = fold_aux rs incats ies in
+                   ((I' (List.rev ies'))::acc, rs, incats)
+      | D ies   -> let ies', rs, incats = fold_aux rs incats ies in
+                   ((D' (List.rev ies'))::acc, rs, incats)
+      | L ie    -> let lock_label = N.lock_labels#get () in
+                   let lock_rule  = ARule ({ incats; exprs = [| ie |] }) in
+                   let rs = convert_rule lock_label lock_rule rs in
+                   ((N' (lock_label,0))::acc, rs, incats)                   
+    and fold_aux rs incats ies = List.fold_left aux ([], rs, incats) ies
+    in    
+    function
+        E       -> ((E', false)::acc, rs, incats)
+      | T t     -> (((T' t), false)::acc, rs, incats)
+      | N (n,i) -> (((N' (n,i)), false)::acc, rs, incats)
+      | C ies   -> let ies', rs, incats = fold_aux rs incats ies in
+                   (((C' (List.rev ies')), false)::acc, rs, incats)
+      | I ies   -> let ies', rs, incats = fold_aux rs incats ies in
+                   (((I' (List.rev ies')), false)::acc, rs, incats)
+      | D ies   -> let ies', rs, incats = fold_aux rs incats ies in
+                   (((D' (List.rev ies')), false)::acc, rs, incats)
+      | L ie    -> let ies', rs, incats = aux ([], rs, incats) ie in
+                   let ie' = List.hd ies' in
+                   ((ie', true)::acc, rs, incats)
+
+  and convert_rule cat r rs =
+    match r with
+      ARule a_r -> let ies', rs, incats' = (Array.fold_left convert_idlexpr
+                                             ([], rs, a_r.incats) a_r.exprs) in
+                   let exprs' = Array.of_list (List.rev ies') in
+                   append_rule cat { incats'; exprs' } rs
+    | ERule e_r -> assert false
+
+  and convert_rules cat rl rs =
+    List.fold_right (convert_rule cat) rl rs
+
+  (* Convert grammar from frontend to backend format *)
+  let convert g =
+    let start' = g.start in
+    N.lock_labels#reset ();
+    let rules' = M.fold convert_rules g.rules M.empty in
+    { rules'; start' }      
+
 end
               
 (* typo: if p.2 *)
@@ -224,6 +301,15 @@ module MyString = struct
   type t = string
   let compare = String.compare
   let print = print_string
+  let lock_labels = object      
+      val mutable c = 0
+      method reset () =
+        c <- 0
+      method get () =
+        let new_label = "@lock@" ^ (string_of_int c) in
+        c <- c + 1;
+        new_label
+    end
 
 end
 
