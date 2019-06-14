@@ -67,6 +67,98 @@ module EIDLPMCFG (T: Symbol) (N: Symbol) = struct
   type grammar = { rules: (rule list) M.t;
                    start: nonterm }
 
+
+  (* Printing functions *)
+                   
+  let rec print_idlexpr = function
+      E       -> print_string "Epsilon"
+    | T t     -> T.print t
+    | N (n,i) -> begin N.print n;
+                       print_string "[";
+                       print_int i;
+                       print_string "]"
+                 end
+    | C ies   -> begin print_string "++(";
+                       List.iter (fun ie -> print_idlexpr ie; print_string ", ") ies;
+                       print_string ")"
+                 end
+    | I ies   -> begin print_string "||(";
+                       List.iter (fun ie -> print_idlexpr ie; print_string ", ") ies;
+                       print_string ")"
+                 end
+    | D ies   -> begin print_string "\/(";
+                       List.iter (fun ie -> print_idlexpr ie; print_string ", ") ies;
+                       print_string ")"
+                 end
+    | L ie    -> begin print_string "`(";
+                       print_idlexpr ie;
+                       print_string ")"
+                 end
+                   
+  let rec print_logic = function
+      LN (n,i)    -> begin N.print n;
+                           print_string "[";
+                           print_int i;
+                           print_string "]"
+                     end
+    | LAnd ls     -> begin print_string "And(";
+                           List.iter (fun l -> print_logic l; print_string ", ") ls;
+                           print_string ")"
+                     end
+    | LOr ls      -> begin print_string "Or(";
+                           List.iter (fun l -> print_logic l; print_string ", ") ls;
+                           print_string ")"
+                     end
+    | LNot l      -> begin print_string "Not(";
+                           print_logic l;
+                           print_string ")"
+                     end
+    | LBool true  -> print_string "True"
+    | LBool false -> print_string "False"
+        
+  let print_rule = function
+      ARule a_r -> begin print_string "    ";
+                         List.iter (fun (a, b) -> print_string "(";
+                                                  N.print a;
+                                                  print_string " : ";
+                                                  N.print b;
+                                                  print_string ") ") a_r.incats;
+                         print_string "->\n";
+                         Array.iteri (fun i ie -> print_string "      ";
+                                                  print_int i;
+                                                  print_string ": ";
+                                                  print_idlexpr ie;
+                                                  print_newline ()) a_r.exprs
+                   end
+    | ERule e_r -> begin print_string "    ";
+                         List.iter (fun (a, b) -> print_string "(";
+                                                  N.print a;
+                                                  print_string " : ";
+                                                  N.print b;
+                                                  print_string ") ") e_r.incats;
+                         print_string "->\n";
+                         print_string "     if ";
+                         print_logic e_r.cndtn;
+                         print_newline();
+                         Array.iteri (fun i ie -> print_string "      ";
+                                                  print_int i;
+                                                  print_string ": ";
+                                                  print_idlexpr ie;
+                                                  print_newline ()) e_r.exprs
+                   end
+
+
+  let print_grammar g =
+    print_string ("<Frontend EIDLPMCFG grammar>\n");
+    print_string "start: ";
+    N.print g.start;
+    print_newline ();
+    print_string "rules:\n";
+    M.iter (fun cat rule -> print_string "  ";
+                            N.print cat;
+                            print_string " <- \n";
+                            List.iter print_rule rule) g.rules;
+
   (* 2. BACKEND GRAMMAR (WITH SEPARATE LOCKS) *)
   (* Logic is not yet implemented *)
 
@@ -82,6 +174,55 @@ module EIDLPMCFG (T: Symbol) (N: Symbol) = struct
 
   type grammar' = { rules': (rule' list) M.t;
                     start': nonterm }
+                    
+  (* Printing functions *)
+                   
+  let rec print_idlexpr' = function
+      E'       -> print_string "Epsilon"
+    | T' t     -> T.print t
+    | N' (n,i) -> begin N.print n;
+                        print_string "[";
+                        print_int i;
+                        print_string "]"
+                  end
+    | C' ies'   -> begin print_string "++(";
+                         List.iter (fun ie' -> print_idlexpr' ie'; print_string ", ") ies';
+                         print_string ")"
+                   end
+    | I' ies'   -> begin print_string "||(";
+                         List.iter (fun ie' -> print_idlexpr' ie'; print_string ", ") ies';
+                         print_string ")"
+                   end
+    | D' ies'   -> begin print_string "\/(";
+                         List.iter (fun ie' -> print_idlexpr' ie'; print_string ", ") ies';
+                         print_string ")"
+                   end
+        
+  let print_rule' r' = 
+     print_string "    ";
+     List.iter (fun (a, b) -> print_string "(";
+                              N.print a;
+                              print_string " : ";
+                              N.print b;
+                              print_string ") ") r'.incats';
+     print_string "->\n";
+     Array.iteri (fun i ie -> print_string "      ";
+                              print_int i;
+                              if snd ie then print_string "[`]";
+                              print_string ": ";
+                              print_idlexpr' (fst ie);
+                              print_newline ()) r'.exprs'
+
+  let print_grammar' g =
+    print_string ("<Backend EIDLPMCFG grammar>\n");
+    print_string "start: ";
+    N.print g.start';
+    print_newline ();
+    print_string "rules:\n";
+    M.iter (fun cat rule -> print_string "  ";
+                            N.print cat;
+                            print_string " <- \n";
+                            List.iter print_rule' rule) g.rules'
 
   (* 3. LINEARIZATION FUNCTIONS *)
 
@@ -314,3 +455,4 @@ module MyString = struct
 end
 
 module G = EIDLPMCFG(MyString)(MyString)
+             

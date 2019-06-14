@@ -36,7 +36,7 @@ module WordSet = struct
     | _ , [] -> a
     | x::t, y::u when y > x -> b@a
     | x::t, y::u when y = x -> (List.tl b)@t
-    | _ , _  -> raise Incompatible
+    | _ , _  -> raise Incompatible                      
                       
 end
 
@@ -76,7 +76,7 @@ module Graph (G: Grammar) = struct
 
   type transition = { lbl: label; lst: graph option; cut: WordSet.t CutM.t }
 
-  (* Return the list of transitions available from a valid cut *)
+  (* return the list of transitions available from a valid cut *)
   let next (cut: WordSet.t CutM.t): transition list =
     let process_edge part_cut s trans (g, l) =
       { lbl = l;
@@ -107,7 +107,7 @@ module Graph (G: Grammar) = struct
     let trans, merges = CutM.fold process_node cut ([], CutM.empty) in
     CutM.fold process_merge merges trans
 
-  (* Apply all possible transitions from a list, given a label and its WordSet *)
+  (* apply all possible transitions from a list, given a label and its WordSet *)
   let apply (ts: transition list) (l: label) (s: WordSet.t): WordSet.t CutM.t list =
     let ts = List.filter (fun t -> t.lbl = l) ts in
     let process_transition cuts t = match t.lst with
@@ -118,7 +118,7 @@ module Graph (G: Grammar) = struct
                   with WordSet.Incompatible -> cuts
     in List.fold_left process_transition [] ts
 
-  (* Generate graph from IDL expression *)
+  (* generate graph from IDL expression *)
   let of_idlexpr expr =
     let rec aux succ = function
         G.E'       -> Final
@@ -132,6 +132,52 @@ module Graph (G: Grammar) = struct
                       Node gs
     in aux Final expr
     
+end
+
+module Context (G: Grammar) = struct
+
+  module Nonterm = struct
+    type t = G.nonterm
+    let compare = compare
+  end
+                         
+  module M = Map.Make(Nonterm)
+
+  type t = WordSet.t option M.t M.t
+
+  (* create initial context from incats *)
+  let create incats =
+    List.fold_right (fun (n, cat) m -> M.update cat (function None   -> Some (M.add n None M.empty)
+                                                            | Some l -> Some (M.add n None l)) m)
+      [] M.empty
+
+  (* extract substring matching positions from WordSet *)
+  (* string is encoded as a list of terms *)
+  let substr ts ws =
+    let rec aux o ws ts = match ws, ts with
+        []     , _               -> []
+      | x::y::t, h::u when y = o -> aux (o+1) t u
+      | x::y::t, h::u when x = o -> h::(aux (o+1) (y::(x+1)::t) u)
+      | x::y::t, h::u when o < x -> aux (o+1) ws u
+      | _      , _               -> assert false
+    in aux 0 (List.rev ws) ts
+        
+  (* return context-compatible nonterminals of given category that may cover a given WordSet in text *)
+  let compatible cntxt s cat ws =
+    match M.find_opt cat cntxt with
+      None    -> []
+    | Some nl -> List.map fst (M.bindings (M.filter (fun n wss
+                                                     -> match wss with
+                                                          None   -> true
+                                                        | Some h -> substr s h = substr s ws) nl))
+
+  (* update context adding nonterminal of given category on given WordSet *)
+  let update cntxt cat n ws =
+    M.update cat (function None    -> assert false
+                         | Some nl -> Some (M.update n (function  None    -> Some ws
+                                                                | Some ws -> Some ws) nl))
+      cntxt
+
 end
 
 (*TEST*)
