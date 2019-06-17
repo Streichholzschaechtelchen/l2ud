@@ -20,6 +20,10 @@ module WordSet = struct
   let interval x y =
     if y > x then [y; x] else raise Invalid
 
+  (* create a word set from a singleton {x} *)
+  let singleton x =
+    interval x (x + 1)
+
   (* merge two word sets that are assumed to be valid *)
   let rec merge a b = match a, b with
       [], _  -> b
@@ -36,20 +40,78 @@ module WordSet = struct
     | _ , [] -> a
     | x::t, y::u when y > x -> b@a
     | x::t, y::u when y = x -> (List.tl b)@t
-    | _ , _  -> raise Incompatible                      
+    | _ , _  -> raise Incompatible
+
+  (* return true iff the word set is locked, ie represents an interval *)
+  let locked = function
+      []     -> true
+    | [y; x] -> true
+    | _      -> false
                       
 end
 
 module type Grammar = sig
 
-  type term
-  type nonterm
+  module T: Formal.Symbol
+  module N: Formal.Symbol
+              
+  module M : sig
+    (* Dirty copying of Map.S with overriden key *)
+    type key = N.t
+    type +'a t
+    val empty : 'a t
+    val is_empty : 'a t -> bool
+    val mem : key -> 'a t -> bool
+    val add : key -> 'a -> 'a t -> 'a t
+    val update : key -> ('a option -> 'a option) -> 'a t -> 'a t
+    val singleton : key -> 'a -> 'a t
+    val remove : key -> 'a t -> 'a t
+    val merge :
+      (key -> 'a option -> 'b option -> 'c option) -> 'a t -> 'b t -> 'c t
+    val union : (key -> 'a -> 'a -> 'a option) -> 'a t -> 'a t -> 'a t
+    val compare : ('a -> 'a -> int) -> 'a t -> 'a t -> int
+    val equal : ('a -> 'a -> bool) -> 'a t -> 'a t -> bool
+    val iter : (key -> 'a -> unit) -> 'a t -> unit
+    val fold : (key -> 'a -> 'b -> 'b) -> 'a t -> 'b -> 'b
+    val for_all : (key -> 'a -> bool) -> 'a t -> bool
+    val exists : (key -> 'a -> bool) -> 'a t -> bool
+    val filter : (key -> 'a -> bool) -> 'a t -> 'a t
+    val partition : (key -> 'a -> bool) -> 'a t -> 'a t * 'a t
+    val cardinal : 'a t -> int
+    val bindings : 'a t -> (key * 'a) list
+    val min_binding : 'a t -> key * 'a
+    val min_binding_opt : 'a t -> (key * 'a) option
+    val max_binding : 'a t -> key * 'a
+    val max_binding_opt : 'a t -> (key * 'a) option
+    val choose : 'a t -> key * 'a
+    val choose_opt : 'a t -> (key * 'a) option
+    val split : key -> 'a t -> 'a t * 'a option * 'a t
+    val find : key -> 'a t -> 'a
+    val find_opt : key -> 'a t -> 'a option
+    val find_first : (key -> bool) -> 'a t -> key * 'a
+    val find_first_opt : (key -> bool) -> 'a t -> (key * 'a) option
+    val find_last : (key -> bool) -> 'a t -> key * 'a
+    val find_last_opt : (key -> bool) -> 'a t -> (key * 'a) option
+    val map : ('a -> 'b) -> 'a t -> 'b t
+    val mapi : (key -> 'a -> 'b) -> 'a t -> 'b t
+    val to_seq : 'a t -> (key * 'a) Seq.t
+    val to_seq_from : key -> 'a t -> (key * 'a) Seq.t
+    val add_seq : (key * 'a) Seq.t -> 'a t -> 'a t
+    val of_seq : (key * 'a) Seq.t -> 'a t
+  end
+                     
+  type term = T.t
+  type nonterm = N.t
   type idlexpr' = E'
                 | T' of term
                 | N' of nonterm * int
                 | C' of idlexpr' list
                 | I' of idlexpr' list
                 | D' of idlexpr' list
+  type rule' = { incats': (nonterm * nonterm) list;
+                 exprs': (idlexpr' * bool) array }
+  type grammar' = { rules': (rule' list) M.t;
+                    start': nonterm }
                                  
 end
 
@@ -65,7 +127,7 @@ module Graph (G: Grammar) = struct
              | Final
 
   and edge = graph * label
-
+                      
   module Cut = struct
     type t = graph
     let compare = compare
@@ -74,7 +136,9 @@ module Graph (G: Grammar) = struct
   module CutS = Set.Make(Cut)
   module CutM = Map.Make(Cut)
 
-  type transition = { lbl: label; lst: graph option; cut: WordSet.t CutM.t }
+  type cut = WordSet.t CutM.t
+                       
+  type transition = { lbl: label; lst: graph option; cut: cut }
 
   (* return the list of transitions available from a valid cut *)
   let next (cut: WordSet.t CutM.t): transition list =
@@ -108,7 +172,7 @@ module Graph (G: Grammar) = struct
     CutM.fold process_merge merges trans
 
   (* apply all possible transitions from a list, given a label and its WordSet *)
-  let apply (ts: transition list) (l: label) (s: WordSet.t): WordSet.t CutM.t list =
+  let apply (ts: transition list) (l: label) (s: WordSet.t): cut list =
     let ts = List.filter (fun t -> t.lbl = l) ts in
     let process_transition cuts t = match t.lst with
         None   -> t.cut::cuts
@@ -131,6 +195,11 @@ module Graph (G: Grammar) = struct
       | G.D' ies'  -> let gs = List.map (fun e' -> (aux (Node [succ, Epsilon]) e', Epsilon)) ies' in
                       Node gs
     in aux Final expr
+
+  (* generate initial cut from IDL expression *)
+  let init expr =
+    let g = of_idlexpr expr in
+     CutM.add g WordSet.empty CutM.empty
     
 end
 
@@ -140,20 +209,29 @@ module Context (G: Grammar) = struct
     type t = G.nonterm
     let compare = compare
   end
+                     
+  module Int = struct
+    type t = int
+    let compare = compare
+  end
                          
   module M = Map.Make(Nonterm)
+  module I = Map.Make(Int)
 
-  type t = WordSet.t option M.t M.t
+  type nonterm = G.nonterm
+  type term    = G.term
+
+  type t = WordSet.t I.t option M.t M.t
 
   (* create initial context from incats *)
-  let create incats =
+  let create (incats: (nonterm * nonterm) list): t =
     List.fold_right (fun (n, cat) m -> M.update cat (function None   -> Some (M.add n None M.empty)
                                                             | Some l -> Some (M.add n None l)) m)
-      [] M.empty
+      incats M.empty
 
   (* extract substring matching positions from WordSet *)
   (* string is encoded as a list of terms *)
-  let substr ts ws =
+  let substr (ts: term list) (ws: WordSet.t) : term list =
     let rec aux o ws ts = match ws, ts with
         []     , _               -> []
       | x::y::t, h::u when y = o -> aux (o+1) t u
@@ -163,19 +241,31 @@ module Context (G: Grammar) = struct
     in aux 0 (List.rev ws) ts
         
   (* return context-compatible nonterminals of given category that may cover a given WordSet in text *)
-  let compatible cntxt s cat ws =
+  let compatible (cntxt: t) (ts: term list) (cat: nonterm) (i: int) (ws: WordSet.t): nonterm list =
     match M.find_opt cat cntxt with
       None    -> []
     | Some nl -> List.map fst (M.bindings (M.filter (fun n wss
                                                      -> match wss with
                                                           None   -> true
-                                                        | Some h -> substr s h = substr s ws) nl))
+                                                        | Some h ->
+                                                           match I.find_opt i h with
+                                                             None -> true
+                                                           | Some xt ->
+                                                              substr ts xt = substr ts ws) nl))
 
   (* update context adding nonterminal of given category on given WordSet *)
-  let update cntxt cat n ws =
+  let update (cntxt: t) (cat: nonterm) (i: int) (n: nonterm) (ws: WordSet.t): t =
     M.update cat (function None    -> assert false
-                         | Some nl -> Some (M.update n (function  None    -> Some ws
-                                                                | Some ws -> Some ws) nl))
+                         | Some nl -> Some (M.update n (function  None
+                                                                  -> assert false
+                                                                | Some None
+                                                                  -> Some (Some (I.add i ws I.empty))
+                                                                | Some (Some m)
+                                                                  -> Some (Some (I.update i
+                                                                                   (function None -> Some ws
+                                                                                           | Some ws -> Some ws)
+                                                                              m))
+                                              ) nl))
       cntxt
 
 end

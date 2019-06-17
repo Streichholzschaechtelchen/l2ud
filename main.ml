@@ -2,6 +2,7 @@ open Printf
 open Stream
 open Lexer
 open Lexing
+open ParsingTools
 
 let print_position_ outx pos =
   fprintf outx "%s:%d:%d" pos.pos_fname

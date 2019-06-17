@@ -12,6 +12,9 @@ module EIDLPMCFG (T: Symbol) (N: Symbol) = struct
   type term = T.t
   type nonterm = N.t
 
+  module T = T
+  module N = N               
+
   module M = Map.Make(N)
          
   type deco_term = Term of term
