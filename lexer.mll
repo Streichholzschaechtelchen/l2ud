@@ -36,7 +36,7 @@ rule read = parse
   | "++"       { PLUSPLUS }
   | "||"       { BARBAR } (*INTERLEAVE*) (* IDL operators *)
   | '`'        { LOCK }
-  | "^^"       { DISJUNCTION }
+  | "\/"       { DISJUNCTION }
   | '.'        { DOT }
   | ':'        { COLON }
   | ';'        { SEMICOLON }

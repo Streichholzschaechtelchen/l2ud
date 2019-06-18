@@ -89,7 +89,7 @@ module EIDLPMCFG (T: Symbol) (N: Symbol) = struct
                        List.iter (fun ie -> print_idlexpr ie; print_string ", ") ies;
                        print_string ")"
                  end
-    | D ies   -> begin print_string "\/(";
+    | D ies   -> begin print_string "\\/(";
                        List.iter (fun ie -> print_idlexpr ie; print_string ", ") ies;
                        print_string ")"
                  end
@@ -196,7 +196,7 @@ module EIDLPMCFG (T: Symbol) (N: Symbol) = struct
                          List.iter (fun ie' -> print_idlexpr' ie'; print_string ", ") ies';
                          print_string ")"
                    end
-    | D' ies'   -> begin print_string "\/(";
+    | D' ies'   -> begin print_string "\\/(";
                          List.iter (fun ie' -> print_idlexpr' ie'; print_string ", ") ies';
                          print_string ")"
                    end
@@ -210,8 +210,8 @@ module EIDLPMCFG (T: Symbol) (N: Symbol) = struct
                               print_string ") ") r'.incats';
      print_string "->\n";
      Array.iteri (fun i ie -> print_string "      ";
-                              print_int i;
                               if snd ie then print_string "[`]";
+                              print_int i;
                               print_string ": ";
                               print_idlexpr' (fst ie);
                               print_newline ()) r'.exprs'
@@ -387,35 +387,35 @@ module EIDLPMCFG (T: Symbol) (N: Symbol) = struct
 
   (* Convert IDL expressions and rules to the new format *)
   let rec convert_idlexpr (acc, rs, incats) =
-    let rec aux (acc, rs, incats) = function
-        E       -> (E'::acc, rs, incats)
-      | T t     -> ((T' t)::acc, rs, incats)
-      | N (n,i) -> ((N' (n,i))::acc, rs, incats)
-      | C ies   -> let ies', rs, incats = fold_aux rs incats ies in
-                   ((C' (List.rev ies'))::acc, rs, incats)
-      | I ies   -> let ies', rs, incats = fold_aux rs incats ies in
-                   ((I' (List.rev ies'))::acc, rs, incats)
-      | D ies   -> let ies', rs, incats = fold_aux rs incats ies in
-                   ((D' (List.rev ies'))::acc, rs, incats)
+    let rec aux (acc, rs, incats, incats') = function
+        E       -> (E'::acc, rs, incats, incats')
+      | T t     -> ((T' t)::acc, rs, incats, incats')
+      | N (n,i) -> ((N' (n,i))::acc, rs, incats, incats')
+      | C ies   -> let ies', rs, incats, incats' = fold_aux rs incats incats' ies in
+                   ((C' (List.rev ies'))::acc, rs, incats, incats')
+      | I ies   -> let ies', rs, incats, incats' = fold_aux rs incats incats' ies in
+                   ((I' (List.rev ies'))::acc, rs, incats, incats')
+      | D ies   -> let ies', rs, incats, incats' = fold_aux rs incats incats' ies in
+                   ((D' (List.rev ies'))::acc, rs, incats, incats')
       | L ie    -> let lock_label = N.lock_labels#get () in
-                   let lock_rule  = ARule ({ incats; exprs = [| ie |] }) in
+                   let lock_rule  = ARule ({ incats; exprs = [| L ie |] }) in
                    let rs = convert_rule lock_label lock_rule rs in
-                   ((N' (lock_label,0))::acc, rs, incats)                   
-    and fold_aux rs incats ies = List.fold_left aux ([], rs, incats) ies
+                   ((N' (lock_label,0))::acc, rs, incats, (lock_label,lock_label)::incats')                   
+    and fold_aux rs incats incats' ies = List.fold_left aux ([], rs, incats, incats') ies
     in    
     function
         E       -> ((E', false)::acc, rs, incats)
       | T t     -> (((T' t), false)::acc, rs, incats)
       | N (n,i) -> (((N' (n,i)), false)::acc, rs, incats)
-      | C ies   -> let ies', rs, incats = fold_aux rs incats ies in
-                   (((C' (List.rev ies')), false)::acc, rs, incats)
-      | I ies   -> let ies', rs, incats = fold_aux rs incats ies in
-                   (((I' (List.rev ies')), false)::acc, rs, incats)
-      | D ies   -> let ies', rs, incats = fold_aux rs incats ies in
-                   (((D' (List.rev ies')), false)::acc, rs, incats)
-      | L ie    -> let ies', rs, incats = aux ([], rs, incats) ie in
+      | C ies   -> let ies', rs, incats, incats' = fold_aux rs incats incats ies in
+                   (((C' (List.rev ies')), false)::acc, rs, incats')
+      | I ies   -> let ies', rs, incats, incats' = fold_aux rs incats incats ies in
+                   (((I' (List.rev ies')), false)::acc, rs, incats')
+      | D ies   -> let ies', rs, incats, incats' = fold_aux rs incats incats ies in
+                   (((D' (List.rev ies')), false)::acc, rs, incats')
+      | L ie    -> let ies', rs, incats, incats' = aux ([], rs, incats, incats) ie in
                    let ie' = List.hd ies' in
-                   ((ie', true)::acc, rs, incats)
+                   ((ie', true)::acc, rs, incats')
 
   and convert_rule cat r rs =
     match r with

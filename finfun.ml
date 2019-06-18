@@ -80,7 +80,7 @@ let rec remove_block (e: Tgfpm.expr) : Tgfpm.expr =
     | Tgfpm.Eproject (e', i)
       -> { e with expr_node = Tgfpm.Eproject (remove_block e', i) }
     | Tgfpm.Eblock e
-      -> e
+      -> remove_block e
     | Tgfpm.Econcat (e1, e2)
       -> { e with expr_node = Tgfpm.Econcat (remove_block e1,
                                              remove_block e2) }
@@ -367,16 +367,8 @@ let rec tl1_log (e: Tgfpm.expr) : Tl1.log option =
   | _                      -> assert false
                                      
 let distribute (e: Tgfpm.expr) : (Tgfpm.expr * Tgfpm.expr) list =
-  print_string "\ndistribute"; print_newline ();
-  Tgfpm.print_expr_node (e.expr_node); print_newline();
-  print_string "chainified"; print_newline ();
-  Tgfpm.print_expr_node (e |> Prenex.chainify).expr_node; print_newline ();
-  print_string "prenexified"; print_newline ();
-  Tgfpm.print_expr_node (e |> Prenex.chainify |> Prenex.prenexify).expr_node; print_newline ();
   (* Convert formula into PNF *)
   let p_e = e |> Prenex.chainify |> Prenex.prenexify |> Prenex.unchainify in
-  print_string "unchainified"; print_newline ();
-  Tgfpm.print_expr_node (p_e.expr_node); print_string "\n\n";
   let mapand l =
     List.map (fun (lo, e) -> (Tgfpm.{ expr_node = Tgfpm.Eand (l, lo);
                                       expr_type = Tgfpm.Tbool }, e)) in
@@ -421,9 +413,6 @@ let tl1_lin (params: Tgfpm.param_map)
     let lin_logs_and_exprs = distribute (remove_block t_lin_expr) in
     let handle_log_and_expr (j, bdd) (l, e) =
       let lin_ident = i ^ "#" ^ (string_of_int j) in
-      print_string lin_ident; print_newline ();
-      Tgfpm.print_expr_node ((l:Tgfpm.expr).expr_node); print_newline ();
-      Tgfpm.print_expr_node ((e:Tgfpm.expr).expr_node); print_newline ();
       try let lin_rcrd, lin_outc = tl1_expr params fli t_lin_args lin_args e t_lin_outc in
           let lin_logc = tl1_log (evaluate params fli t_lin_args lin_args t_lin_outc Tgfpm.M.empty l) in
           let new_lin = Tl1.{ lin_outc; lin_args; lin_rcrd; lin_logc } in

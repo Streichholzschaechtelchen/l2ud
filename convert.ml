@@ -15,24 +15,24 @@ let rec assoc_expr (e: G.idlexpr) : G.idlexpr =
   | G.C es    -> let es' = List.fold_left
                              (fun acc e
                               -> match (assoc_expr e) with
-                                   G.C es' -> es' @ acc
+                                   G.C es' -> (List.rev es') @ acc
                                  | e'      -> e'::acc)
                              [] es
-                 in G.C es'
+                 in G.C (List.rev es')
   | G.I es    -> let es' = List.fold_left
                              (fun acc e
                               -> match (assoc_expr e) with
-                                   G.I es' -> es' @ acc
+                                   G.I es' -> (List.rev es') @ acc
                                  | e'      -> e'::acc)
                              [] es
-                 in G.I es'
+                 in G.I (List.rev es')
   | G.D es    -> let es' = List.fold_left
                              (fun acc e
                               -> match (assoc_expr e) with
-                                   G.D es' -> es' @ acc
+                                   G.D es' -> (List.rev es') @ acc
                                  | e'      -> e'::acc)
                              [] es
-                 in G.D es'
+                 in G.D (List.rev es')
   | G.L e     -> let e' = assoc_expr e in
                  match e' with
                    G.L e'' -> e'

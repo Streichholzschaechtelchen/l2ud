@@ -1,5 +1,7 @@
 module Parser (G: ParsingTools.Grammar) = struct
 
+  (* 1. DEFINITIONS *)
+  
   module Graph = ParsingTools.Graph(G)
   module Context = ParsingTools.Context(G)
                                        
@@ -29,19 +31,81 @@ module Parser (G: ParsingTools.Grammar) = struct
   module SPassItem = Set.Make(PassItem)
 
   type env = { gram: G.grammar';
-               str : G.term list;
+               ts  : G.term list;
                acts: SActItem.t;
                pass: SPassItem.t }
 
-  let empty_env gram str = { gram; str;
-                             acts = SActItem.empty;
-                             pass = SPassItem.empty }
+  let empty_env gram ts = { gram; ts;
+                            acts = SActItem.empty;
+                            pass = SPassItem.empty }
 
-  let rec parse gram str =
-    let e = predict_all (empty_env gram str) in
-    let stri = List.mapi (fun i w -> (i,w)) str in
-    List.fold_left (fun e (i,w) ->
-        SActItem.fold (try_scan w i) e.acts e) e stri
+
+  (* 2. PRINTING FUNCTIONS *)
+
+  let print_actItem (it: actItem) =
+    print_string "<active item> = {\n";
+    print_string "n = ";
+    G.N.print it.n;
+    print_string "\ni = ";
+    print_int it.i;
+    print_string "\nexpr = ";
+    G.print_idlexpr' it.expr;
+    print_string "\ncut = ";
+    Graph.print_cut it.cut;
+    print_string "\ncntxt = ";
+    Context.print it.cntxt;
+    if it.lockd then print_string "\nLOCKED";
+    print_string "\n}"
+
+  let print_passItem (it: passItem) =
+    print_string "<passive item> = {\n";
+    print_string "n = ";
+    G.N.print it.n;
+    print_string "\ni = ";
+    print_int it.i;
+    print_string "\nws = ";
+    ParsingTools.WordSet.print it.ws;
+    print_string "\n}"
+
+  let print_env (e: env) =
+    print_string "<ENVIRONMENT>\n\n";
+    print_string "***GRAMMAR***\n\n";
+    G.print_grammar' e.gram;
+    print_string "\n\n***STRING TO PARSE***\n\n";
+    List.iter (fun s -> G.T.print s; print_string " ") e.ts;
+    print_string "\n\n***ACTIVE ITEMS***\n\n";
+    SActItem.iter (fun it -> print_actItem it; print_string "\n\n") e.acts;
+    print_string "***PASSIVE ITEMS***\n\n";
+    SPassItem.iter (fun it -> print_passItem it; print_string "\n\n") e.pass;
+    print_string "</ENVIRONMENT>\n\n"
+
+  let print_env_stats (e: env) =
+    print_string "Rules in grammar: ";
+    print_int (G.M.cardinal e.gram.rules');
+    print_string "\nLength of token list: ";
+    print_int (List.length e.ts);
+    print_string "\nActive items: ";
+    print_int (SActItem.cardinal e.acts);
+    print_string "\nPassive items: ";
+    print_int (SPassItem.cardinal e.pass);
+    print_newline ()
+                            
+  (* 3. PARSING ALGORITHM *)
+    
+  let rec parse gram ts =
+    let e = predict_all (empty_env gram ts) in
+    let tsi = List.mapi (fun i w -> (i,w)) ts in
+    let ws' = ParsingTools.WordSet.total ts in
+    let e = List.fold_left (fun e (i,w) ->
+                let e = SActItem.fold (try_scan w i) e.acts e in
+                if !Flags.verbose then print_env e;
+                if !Flags.statistics then (print_string "Iter ";
+                                           print_int (i+1);
+                                           print_newline ();
+                                           print_env_stats e;
+                                           print_newline ());
+                e) e tsi in
+    SPassItem.exists (fun pas -> pas.n = gram.start' && pas.ws = ws') e.pass
 
   and predict_all e =
     let process_rule' n (r: G.rule') e =
@@ -105,7 +169,7 @@ module Parser (G: ParsingTools.Grammar) = struct
       let cuts = Graph.apply trans (Graph.Nonterm (n, pas.i)) pas.ws in
       List.fold_right (process_cut pas n) cuts e in
     let process_item pas e =
-      let ns = Context.compatible act.cntxt e.str pas.n pas.i pas.ws in
+      let ns = Context.compatible act.cntxt e.ts pas.n pas.i pas.ws in
       List.fold_right (process_nonterm pas) ns e
     in SPassItem.fold process_item e.pass e
 
@@ -120,7 +184,7 @@ module Parser (G: ParsingTools.Grammar) = struct
       let cuts = Graph.apply trans (Graph.Nonterm (n, pas.i)) pas.ws in
       List.fold_right (process_cut act n) cuts e in
     let process_item act e =
-      let ns = Context.compatible act.cntxt e.str pas.n pas.i pas.ws in
+      let ns = Context.compatible act.cntxt e.ts pas.n pas.i pas.ws in
       List.fold_right (process_nonterm act) ns e
     in SActItem.fold process_item e.acts e
 
@@ -131,3 +195,5 @@ module Parser (G: ParsingTools.Grammar) = struct
     |> try_combine_LHS act
 
 end
+
+module P = Parser(Formal.G)

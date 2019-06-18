@@ -24,22 +24,34 @@ module WordSet = struct
   let singleton x =
     interval x (x + 1)
 
+  (* create a word set matching a complete terminal list *)
+  let total ts =
+    interval 0 (List.length ts)
+
   (* merge two word sets that are assumed to be valid *)
-  let rec merge a b = match a, b with
-      [], _  -> b
-    | _ , [] -> a
-    | y::x::t, y'::x'::t' when x > y' -> y::x::(merge t b)
-    | y::x::t, y'::x'::t' when x = y' -> y::x'::(merge t t')
-    | y::x::t, y'::x'::t' when y > x' -> y'::x'::(merge t' a)
-    | y::x::t, y'::x'::t' when y = x' -> y'::x::(merge t t')
-    | _ -> raise Incompatible
+  let rec merge a b =
+    let rec join x y u v = match u, v with
+        r::s::t, l::m::n when s >= l && r = x  -> join s y t v
+      | r::s::t, l::m::n when m >= r && l = x  -> join m y u n
+      | r::s::t, []      when r = x            -> join s y t []
+      | []     , l::m::n when l = x            -> join m y [] n
+      | _      , _                             -> (interval x y, u, v) in
+    let rec aux a b = match a, b with
+        []     , _                   -> b
+      | _      , []                  -> a
+      | y::x::t, g::f::e when x >= g -> let i, a, b = join x y t b in
+                                        i@(aux a b)
+      | y::x::t, g::f::e when f >= y -> let i, a, b = join f g a e in
+                                        i@(aux a b)
+      | _      , _                   -> raise Incompatible in
+    aux a b 
                  
-  (* append an interval to a word set *)
+  (* append a word set to another word set *)
   let append a b = match a, List.rev b with
       [], _  -> b
     | _ , [] -> a
     | x::t, y::u when y > x -> b@a
-    | x::t, y::u when y = x -> (List.tl b)@t
+    | x::t, y::u when y = x -> (List.rev u)@t
     | _ , _  -> raise Incompatible
 
   (* return true iff the word set is locked, ie represents an interval *)
@@ -47,7 +59,23 @@ module WordSet = struct
       []     -> true
     | [y; x] -> true
     | _      -> false
-                      
+
+  (* print word set *)
+  let print a =
+    print_string "(";
+    let rec loop = function
+        []      -> ()
+      | x::y::t -> begin print_string "[";
+                         print_int x;
+                         print_string ";";
+                         print_int y;
+                         print_string "[";
+                         loop t
+                   end
+      | _       -> assert false
+    in loop (List.rev a);
+       print_string ")"
+                  
 end
 
 module type Grammar = sig
@@ -112,6 +140,9 @@ module type Grammar = sig
                  exprs': (idlexpr' * bool) array }
   type grammar' = { rules': (rule' list) M.t;
                     start': nonterm }
+
+  val print_idlexpr': idlexpr' -> unit
+  val print_grammar': grammar' -> unit
                                  
 end
 
@@ -188,7 +219,7 @@ module Graph (G: Grammar) = struct
         G.E'       -> Final
       | G.T' t     -> Node ([succ, Term t])
       | G.N' (n,i) -> Node ([succ, Nonterm (n,i)])
-      | G.C' ies'  -> List.fold_left aux succ ies'
+      | G.C' ies'  -> List.fold_left aux succ (List.rev ies')
       | G.I' ies'  -> let l = List.length ies' in
                       let gs = List.mapi (fun i e' -> aux (Merge (succ, i, l)) e') ies' in
                       Split gs
@@ -199,7 +230,44 @@ module Graph (G: Grammar) = struct
   (* generate initial cut from IDL expression *)
   let init expr =
     let g = of_idlexpr expr in
-     CutM.add g WordSet.empty CutM.empty
+    CutM.add g WordSet.empty CutM.empty
+
+  (* print graph *)
+  let rec print_graph =
+    let print_label = function
+        Term t        -> G.T.print t
+      | Nonterm (n,i) -> begin G.N.print n; print_string "["; print_int i; print_string "]" end
+      | Epsilon       -> print_string "Epsilon"
+    in function
+      Split gs      -> begin print_string "Split(";
+                             List.iter (fun g -> print_graph g; print_string ", ") gs;
+                             print_string ")"
+                       end
+    | Merge (g,i,j) -> begin print_string "Merge(";
+                             print_graph g;
+                             print_string ", ";
+                             print_int (i+1);
+                             print_string "/";
+                             print_int j;
+                             print_string ")"
+                       end
+    | Node es       -> begin print_string "Node(";
+                             List.iter (fun (g,l) -> print_label l;
+                                                     print_string ": ";
+                                                     print_graph g;
+                                                     print_string ", ") es;
+                             print_string ")"
+                       end
+    | Final         -> print_string "Final"
+
+  (* print cut *)
+  let print_cut cut =
+    print_string "<cut> = {\n";
+    CutM.iter (fun g ws -> print_graph g;
+                           print_string " -> ";
+                           WordSet.print ws;
+                           print_newline ()) cut;
+    print_string "}"
     
 end
 
@@ -233,7 +301,8 @@ module Context (G: Grammar) = struct
   (* string is encoded as a list of terms *)
   let substr (ts: term list) (ws: WordSet.t) : term list =
     let rec aux o ws ts = match ws, ts with
-        []     , _               -> []
+        []     , _
+      | _      , []              -> []
       | x::y::t, h::u when y = o -> aux (o+1) t u
       | x::y::t, h::u when x = o -> h::(aux (o+1) (y::(x+1)::t) u)
       | x::y::t, h::u when o < x -> aux (o+1) ws u
@@ -267,6 +336,25 @@ module Context (G: Grammar) = struct
                                                                               m))
                                               ) nl))
       cntxt
+
+  (* print context *)
+  let print (cntxt: t): unit =
+    print_string "<context> = {\n";
+    let aux2 = function
+        None     -> print_string "[]";
+      | Some m'' -> print_string "[";
+                    I.iter (fun i ws -> print_string "#";
+                                        print_int i;
+                                        WordSet.print ws) m'';
+                    print_string "]" in
+    let aux1 cat m =
+      M.iter (fun n m' -> G.N.print n;
+                          print_string ":";
+                          G.N.print cat;
+                          print_string " -> (";
+                          aux2 m';
+                          print_string ")\n") m
+    in M.iter aux1 cntxt; print_string "}"
 
 end
 

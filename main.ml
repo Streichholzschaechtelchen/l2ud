@@ -3,6 +3,7 @@ open Stream
 open Lexer
 open Lexing
 open ParsingTools
+open Flags
 
 let print_position_ outx pos =
   fprintf outx "%s:%d:%d" pos.pos_fname
@@ -27,7 +28,7 @@ let type_with_error gpfm_file =
     fprintf stderr "%a: %s\n" print_position_ loc msg;
     exit (-1)
 
-let loop filename =
+let open_grammar filename =
   let inx = open_in filename in
   let lexbuf = Lexing.from_channel inx in
   lexbuf.lex_curr_p <- { lexbuf.lex_curr_p with pos_fname = filename };
@@ -38,7 +39,7 @@ let loop filename =
   let tl2_file = Rec.tl2_file tl1_file in
   let grammar = Convert.convert_file tl2_file in
   let grammar' = Formal.G.convert grammar in
-  Gfpm.print_file gfpm_file;
+  (*Gfpm.print_file gfpm_file;
   print_newline ();
   Tgfpm.print_file tgfpm_file;
   print_newline ();
@@ -48,10 +49,29 @@ let loop filename =
   print_newline ();
   Formal.G.print_grammar grammar;
   print_newline ();
-  Formal.G.print_grammar' grammar';
-  close_in inx
+  Formal.G.print_grammar' grammar';*)
+  close_in inx;
+  grammar'
 
+let loop_test grammar_fn ts =
+  let grammar' = open_grammar grammar_fn in
+  let accepted = Parsing.P.parse grammar' ts in
+  match accepted with
+    true -> print_string "Accepted!\n"
+  | _    -> print_string "Rejected!\n"
+       
 let _ =
-  loop "test.gfpm";
-  print_string "ok!\n"
+  Arg.parse [("-g", Set_string grammar_fn, "COMPA grammar to use");
+             ("-t", Set_string text_to_parse, "Text to parse");
+             ("-v", Set verbose, "Verbose");
+             ("-s", Set statistics, "Show parsing statistics")]
+    (fun _ -> ())
+    "COMPAges Grammaticalis v0";
+  let time = -. Unix.gettimeofday () in
+  loop_test !grammar_fn (String.split_on_char ' ' !text_to_parse);
+  let time = time +. Unix.gettimeofday () in
+  print_string "(";
+  print_float time;
+  print_string "s)"
+    
     
