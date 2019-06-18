@@ -38,7 +38,6 @@ let open_grammar filename =
   let tl1_file = Finfun.tl1_file tgfpm_file in
   let tl2_file = Rec.tl2_file tl1_file in
   let grammar = Convert.convert_file tl2_file in
-  let grammar' = Formal.G.convert grammar in
   (*Gfpm.print_file gfpm_file;
   print_newline ();
   Tgfpm.print_file tgfpm_file;
@@ -51,7 +50,7 @@ let open_grammar filename =
   print_newline ();
   Formal.G.print_grammar' grammar';*)
   close_in inx;
-  grammar'
+  grammar
 
 let loop_test grammar_fn ts =
   let grammar' = open_grammar grammar_fn in
@@ -72,6 +71,5 @@ let _ =
   let time = time +. Unix.gettimeofday () in
   print_string "(";
   print_float time;
-  print_string "s)"
-    
+  print_string "s)\n"
     

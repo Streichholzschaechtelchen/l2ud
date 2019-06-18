@@ -7,10 +7,9 @@ module Parser (G: ParsingTools.Grammar) = struct
                                        
   type actItem = { n    : G.nonterm;
                    i    : int;
-                   expr : G.idlexpr';
+                   expr : G.idlexpr;
                    cut  : Graph.cut;
-                   cntxt: Context.t;
-                   lockd: bool }
+                   cntxt: Context.t }
 
   type passItem = { n : G.nonterm;
                     i : int;
@@ -30,7 +29,7 @@ module Parser (G: ParsingTools.Grammar) = struct
 
   module SPassItem = Set.Make(PassItem)
 
-  type env = { gram: G.grammar';
+  type env = { gram: G.grammar;
                ts  : G.term list;
                acts: SActItem.t;
                pass: SPassItem.t }
@@ -49,12 +48,11 @@ module Parser (G: ParsingTools.Grammar) = struct
     print_string "\ni = ";
     print_int it.i;
     print_string "\nexpr = ";
-    G.print_idlexpr' it.expr;
+    G.print_idlexpr it.expr;
     print_string "\ncut = ";
     Graph.print_cut it.cut;
     print_string "\ncntxt = ";
     Context.print it.cntxt;
-    if it.lockd then print_string "\nLOCKED";
     print_string "\n}"
 
   let print_passItem (it: passItem) =
@@ -70,7 +68,7 @@ module Parser (G: ParsingTools.Grammar) = struct
   let print_env (e: env) =
     print_string "<ENVIRONMENT>\n\n";
     print_string "***GRAMMAR***\n\n";
-    G.print_grammar' e.gram;
+    G.print_grammar e.gram;
     print_string "\n\n***STRING TO PARSE***\n\n";
     List.iter (fun s -> G.T.print s; print_string " ") e.ts;
     print_string "\n\n***ACTIVE ITEMS***\n\n";
@@ -81,7 +79,7 @@ module Parser (G: ParsingTools.Grammar) = struct
 
   let print_env_stats (e: env) =
     print_string "Rules in grammar: ";
-    print_int (G.M.cardinal e.gram.rules');
+    print_int (G.M.cardinal e.gram.rules);
     print_string "\nLength of token list: ";
     print_int (List.length e.ts);
     print_string "\nActive items: ";
@@ -105,23 +103,26 @@ module Parser (G: ParsingTools.Grammar) = struct
                                            print_env_stats e;
                                            print_newline ());
                 e) e tsi in
-    SPassItem.exists (fun pas -> pas.n = gram.start' && pas.ws = ws') e.pass
+    SPassItem.exists (fun pas -> pas.n = gram.start && pas.ws = ws') e.pass
 
   and predict_all e =
-    let process_rule' n (r: G.rule') e =
-      let exprsi = Array.mapi (fun i x -> (i,x)) r.exprs' in
-      Array.fold_left (fun e (i,expr') ->
-          let expr, lockd = expr' in
-          let it = { n; i; expr; lockd;
-                     cut = Graph.init expr;
-                     cntxt = Context.create r.incats';
-                   } in
-          let acts = SActItem.add it e.acts in
-          try_rec it { e with acts })
-        e exprsi in
+    let process_rule' n (r: G.rule) e =
+      match r with
+        ARule a_r -> begin
+          let exprsi = Array.mapi (fun i x -> (i,x)) a_r.exprs in
+          Array.fold_left (fun e (i,expr) ->
+              let it = { n; i; expr;
+                         cut = Graph.init expr;
+                         cntxt = Context.create a_r.incats;
+                       } in
+              let acts = SActItem.add it e.acts in
+              try_rec it { e with acts }) e exprsi
+        end
+      | ERule e_r -> assert false
+    in
     let process_rules' n =
       List.fold_right (process_rule' n) 
-    in G.M.fold process_rules' e.gram.rules' e
+    in G.M.fold process_rules' e.gram.rules e
                 
   and try_scan a j act e =
     let sing  = ParsingTools.WordSet.singleton j in
@@ -136,14 +137,12 @@ module Parser (G: ParsingTools.Grammar) = struct
   and try_save act e =
     match Graph.CutM.cardinal act.cut with
       1 -> begin match Graph.CutM.bindings act.cut with
-             [Final, ws] -> begin if not act.lockd || ParsingTools.WordSet.locked ws
-                                  then let it = { n  = act.n;
-                                                  i  = act.i;
-                                                  ws } in
-                                       let pass = SPassItem.add it e.pass in
-                                       try_combine_RHS it { e with pass }
-                                  else e
-                            end
+             [Final, wss] -> begin let it = { n  = act.n;
+                                              i  = act.i;
+                                              ws = fst (ParsingTools.WordSetStack.pop wss) } in
+                                   let pass = SPassItem.add it e.pass in
+                                   try_combine_RHS it { e with pass }
+                             end
            | [_]         -> e
            | _           -> assert false
            end

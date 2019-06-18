@@ -78,6 +78,51 @@ module WordSet = struct
                   
 end
 
+module WordSetStack = struct
+
+  type t = WordSet.t list
+
+  exception Empty_WordSetStack
+  exception Singleton_WordSetStack
+
+  let push (ws: WordSet.t) (wss: t) : t =
+    ws::wss
+
+  let pop : t -> (WordSet.t * t) = function
+      []   -> raise Empty_WordSetStack
+    | h::t -> h, t
+
+  let merge : t list -> t = function
+      []   -> raise Empty_WordSetStack
+    | h::t -> let x, h = pop h in
+              push (List.fold_left (fun acc ws -> WordSet.merge (fst (pop ws)) acc) x t) h
+
+  let lock (wss: t) : t =
+    push WordSet.empty wss
+      
+  let unlock : t -> t = function
+      []                            -> raise Empty_WordSetStack
+    | [a]                           -> raise Singleton_WordSetStack
+    | a::b::t when WordSet.locked a -> push (WordSet.merge a b) t
+    | a::b::t                       -> raise WordSet.Incompatible
+
+  let append (a: WordSet.t) (wss: t) : t =
+    let b, wss = pop wss in
+    push (WordSet.append b a) wss
+
+  let init : t =
+    [WordSet.empty]
+
+  let locked (wss: t) : bool =
+    WordSet.locked (fst (pop wss))
+
+  let print (wss: t) : unit =
+    print_string "[";
+    List.iter (fun ws -> WordSet.print ws; print_string "; ") wss;
+    print_string "]"
+
+end
+
 module type Grammar = sig
 
   module T: Formal.Symbol
@@ -130,19 +175,35 @@ module type Grammar = sig
                      
   type term = T.t
   type nonterm = N.t
-  type idlexpr' = E'
-                | T' of term
-                | N' of nonterm * int
-                | C' of idlexpr' list
-                | I' of idlexpr' list
-                | D' of idlexpr' list
-  type rule' = { incats': (nonterm * nonterm) list;
-                 exprs': (idlexpr' * bool) array }
-  type grammar' = { rules': (rule' list) M.t;
-                    start': nonterm }
+                   
+  type idlexpr = E
+               | T of term
+               | N of nonterm * int
+               | C of idlexpr list
+               | I of idlexpr list
+               | D of idlexpr list
+               | L of idlexpr
 
-  val print_idlexpr': idlexpr' -> unit
-  val print_grammar': grammar' -> unit
+  type logic = LN of nonterm * int
+             | LAnd of logic list
+             | LOr of logic list
+             | LNot of logic
+             | LBool of bool
+
+  type a_rule = { incats: (nonterm * nonterm) list;
+                  exprs : idlexpr array }
+
+  type e_rule = { incats: (nonterm * nonterm) list;
+                  exprs : idlexpr array;
+                  cndtn : logic }
+
+  type rule = ARule of a_rule | ERule of e_rule
+                                           
+  type grammar = { rules: (rule list) M.t;
+                   start: nonterm }
+
+  val print_idlexpr: idlexpr -> unit
+  val print_grammar: grammar -> unit
                                  
 end
 
@@ -152,9 +213,11 @@ module Graph (G: Grammar) = struct
              | Nonterm of G.nonterm * int
              | Epsilon
 
-  type graph = Split of graph list
-             | Merge of graph * int * int
-             | Node  of edge list
+  type graph = Split  of graph list
+             | Merge  of graph * int * int
+             | Node   of edge list
+             | Lock   of graph
+             | Unlock of graph
              | Final
 
   and edge = graph * label
@@ -167,32 +230,42 @@ module Graph (G: Grammar) = struct
   module CutS = Set.Make(Cut)
   module CutM = Map.Make(Cut)
 
-  type cut = WordSet.t CutM.t
+  type cut = WordSetStack.t CutM.t
                        
   type transition = { lbl: label; lst: graph option; cut: cut }
 
   (* return the list of transitions available from a valid cut *)
-  let next (cut: WordSet.t CutM.t): transition list =
+  let next (cut: cut): transition list =
     let process_edge part_cut s trans (g, l) =
       { lbl = l;
         lst = Some g;
         cut = CutM.add g s part_cut }::trans
     in
     let process_node g s (trans, merges) = match g with
-        Split gs         -> ({ lbl = Epsilon;
+        Split gs         -> let s' = WordSetStack.lock s in
+                            ({ lbl = Epsilon;
                                lst = None;
-                               cut = List.fold_right (fun g' -> CutM.add g' s) gs (CutM.remove g cut) }::trans,
+                               cut = List.fold_right (fun g' -> CutM.add g' s') gs (CutM.remove g cut) }::trans,
                              merges)
       | Merge (g', j, i) -> (trans, CutM.update g'
                                       (function None ->
                                                  Some ([(g,s)], i) | Some (gs, i) -> Some ((g,s)::gs, i)) merges)
+      | Lock g'          -> ({ lbl = Epsilon;
+                               lst = None;
+                               cut = CutM.add g' (WordSetStack.lock s) (CutM.remove g cut) }::trans, merges)
+      | Unlock g'        -> begin try ({ lbl = Epsilon;
+                                         lst = None;
+                                         cut = CutM.add g' (WordSetStack.unlock s) (CutM.remove g cut) }::trans,
+                                       merges)
+                                  with WordSet.Incompatible -> (trans, merges)
+                             end
       | Node  es         -> (List.fold_left (process_edge (CutM.remove g cut) s) trans es, merges)
       | Final            -> (trans, merges)
     in
     let process_merge g (gs, i) trans =
       if List.length gs = i
       then let g_, s_ = List.split gs in
-           try let merged = List.fold_left WordSet.merge WordSet.empty s_ in
+           try let merged = WordSetStack.merge s_ in
                { lbl = Epsilon;
                  lst = None;
                  cut = CutM.add g merged (List.fold_right CutM.remove g_ cut) }::trans
@@ -207,8 +280,8 @@ module Graph (G: Grammar) = struct
     let ts = List.filter (fun t -> t.lbl = l) ts in
     let process_transition cuts t = match t.lst with
         None   -> t.cut::cuts
-      | Some g -> try let s' = CutM.find g t.cut in
-                      let cut = CutM.update g (fun _ -> Some (WordSet.append s' s)) t.cut in
+      | Some g -> try let cut = CutM.update g (function Some s' -> Some (WordSetStack.append s s')
+                                                      | _ -> assert false) t.cut in
                       cut::cuts
                   with WordSet.Incompatible -> cuts
     in List.fold_left process_transition [] ts
@@ -216,21 +289,22 @@ module Graph (G: Grammar) = struct
   (* generate graph from IDL expression *)
   let of_idlexpr expr =
     let rec aux succ = function
-        G.E'       -> Final
-      | G.T' t     -> Node ([succ, Term t])
-      | G.N' (n,i) -> Node ([succ, Nonterm (n,i)])
-      | G.C' ies'  -> List.fold_left aux succ (List.rev ies')
-      | G.I' ies'  -> let l = List.length ies' in
-                      let gs = List.mapi (fun i e' -> aux (Merge (succ, i, l)) e') ies' in
-                      Split gs
-      | G.D' ies'  -> let gs = List.map (fun e' -> (aux (Node [succ, Epsilon]) e', Epsilon)) ies' in
-                      Node gs
+        G.E       -> Final
+      | G.T t     -> Node ([succ, Term t])
+      | G.N (n,i) -> Node ([succ, Nonterm (n,i)])
+      | G.C ies   -> List.fold_left aux succ (List.rev ies) 
+      | G.I ies   -> let l = List.length ies in
+                     let gs = List.mapi (fun i e' -> aux (Merge (succ, i, l)) e') ies in
+                     Split gs
+      | G.D ies   -> let gs = List.map (fun e' -> (aux (Node [succ, Epsilon]) e', Epsilon)) ies in
+                     Node gs
+      | G.L ie    -> Lock (aux (Unlock succ) ie)
     in aux Final expr
 
   (* generate initial cut from IDL expression *)
   let init expr =
     let g = of_idlexpr expr in
-    CutM.add g WordSet.empty CutM.empty
+    CutM.add g WordSetStack.init CutM.empty
 
   (* print graph *)
   let rec print_graph =
@@ -258,6 +332,14 @@ module Graph (G: Grammar) = struct
                                                      print_string ", ") es;
                              print_string ")"
                        end
+    | Lock g        -> begin print_string "Lock(";
+                             print_graph g;
+                             print_string ")"
+                       end
+    | Unlock g      -> begin print_string "Unlock(";
+                             print_graph g;
+                             print_string ")"
+                       end
     | Final         -> print_string "Final"
 
   (* print cut *)
@@ -265,7 +347,7 @@ module Graph (G: Grammar) = struct
     print_string "<cut> = {\n";
     CutM.iter (fun g ws -> print_graph g;
                            print_string " -> ";
-                           WordSet.print ws;
+                           WordSetStack.print ws;
                            print_newline ()) cut;
     print_string "}"
     
@@ -415,7 +497,7 @@ let cut_5_b = CutM.bindings cut_5
 
 let transitions_6 = next cut_5
 
-let ie' = G.C' ([G.T' "a"; G.T' "b"])
+let ie = G.C ([G.L (G.I [G.T "a"; G.T "b"]); G.T "b"])
 
-let ie'_g = of_idlexpr ie'
+let ie_g = of_idlexpr ie
 
