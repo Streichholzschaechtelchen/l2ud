@@ -94,8 +94,9 @@ module WordSetStack = struct
 
   let merge : t list -> t = function
       []   -> raise Empty_WordSetStack
-    | h::t -> let x, h = pop h in
-              push (List.fold_left (fun acc ws -> WordSet.merge (fst (pop ws)) acc) x t) h
+    | h::t -> let _, t'  = pop h in
+              let y, t'' = pop t' in
+              push (List.fold_left (fun acc ws -> WordSet.merge (fst (pop ws)) acc) y (h::t)) t''
 
   let lock (wss: t) : t =
     push WordSet.empty wss
@@ -447,7 +448,7 @@ end
                     #load "formal.cmo";;
    in the toplevel *)
                               
-open Formal
+(*open Formal
 
 module TestGraph = Graph(G)
 
@@ -501,3 +502,4 @@ let ie = G.C ([G.L (G.I [G.T "a"; G.T "b"]); G.T "b"])
 
 let ie_g = of_idlexpr ie
 
+ *)
