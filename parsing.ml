@@ -4,6 +4,16 @@ module Parser (G: ParsingTools.Grammar) = struct
   
   module Graph = ParsingTools.Graph(G)
   module Context = ParsingTools.Context(G)
+  module AST = Ast.AST(G)
+
+  module SAST = Set.Make(AST)
+
+  module ContextT = struct
+    type t = Context.t
+    let compare = compare
+  end
+
+  module SContext = Set.Make(ContextT)
                                        
   type actItem = { n    : G.nonterm;
                    i    : int;
@@ -27,16 +37,16 @@ module Parser (G: ParsingTools.Grammar) = struct
 
   module SActItem = Set.Make(ActItem)
 
-  module SPassItem = Set.Make(PassItem)
+  module MPassItem = Map.Make(PassItem)
 
   type env = { gram: G.grammar;
                ts  : G.term list;
                acts: SActItem.t;
-               pass: SPassItem.t }
+               pass: SContext.t MPassItem.t }
 
   let empty_env gram ts = { gram; ts;
                             acts = SActItem.empty;
-                            pass = SPassItem.empty }
+                            pass = MPassItem.empty }
 
 
   (* 2. PRINTING FUNCTIONS *)
@@ -55,7 +65,7 @@ module Parser (G: ParsingTools.Grammar) = struct
     Context.print it.cntxt;
     print_string "\n}"
 
-  let print_passItem (it: passItem) =
+  let print_passItem (it: passItem) (cntxts: SContext.t) =
     print_string "<passive item> = {\n";
     print_string "n = ";
     G.N.print it.n;
@@ -63,7 +73,9 @@ module Parser (G: ParsingTools.Grammar) = struct
     print_int it.i;
     print_string "\nws = ";
     ParsingTools.WordSet.print it.ws;
-    print_string "\n}"
+    print_string "\ncntxts = {";
+    SContext.iter (fun cx -> Context.print cx; print_string ";\n") cntxts;
+    print_string "}}"
 
   let print_env (e: env) =
     print_string "<ENVIRONMENT>\n\n";
@@ -74,7 +86,7 @@ module Parser (G: ParsingTools.Grammar) = struct
     print_string "\n\n***ACTIVE ITEMS***\n\n";
     SActItem.iter (fun it -> print_actItem it; print_string "\n\n") e.acts;
     print_string "***PASSIVE ITEMS***\n\n";
-    SPassItem.iter (fun it -> print_passItem it; print_string "\n\n") e.pass;
+    MPassItem.iter (fun it cx -> print_passItem it cx; print_string "\n\n") e.pass;
     print_string "</ENVIRONMENT>\n\n"
 
   let print_env_stats (e: env) =
@@ -85,10 +97,39 @@ module Parser (G: ParsingTools.Grammar) = struct
     print_string "\nActive items: ";
     print_int (SActItem.cardinal e.acts);
     print_string "\nPassive items: ";
-    print_int (SPassItem.cardinal e.pass);
+    print_int (MPassItem.cardinal e.pass);
     print_newline ()
+
+  (* 3. ABSTRACT SYNTAX TREES *)
+
+  let find_passive_items cat i ws
+      : SContext.t MPassItem.t -> SContext.t MPassItem.t =
+    MPassItem.filter (fun it _ -> it.n = cat && it.i = i && it.ws = ws)
+
+  let cartesian (asm: SAST.t Context.M.t) : AST.t Context.M.t list =
+    Context.M.fold (fun n as_ acc ->
+        SAST.fold (fun a bdd ->
+            List.fold_left (fun cee am ->
+                (Context.M.add n a am)::cee)
+              bdd
+              acc)
+          as_
+          [])
+      asm
+      []
+
+  let rec all_parse_trees pass it cntxts =
+    let process_context (cntxt: Context.t) : SAST.t Context.M.t =
+      assert false in
+    let ams = List.concat (List.map cartesian (List.map process_context (SContext.elements cntxts))) in
+    
+    
+    
+
+      
+    
                             
-  (* 3. PARSING ALGORITHM *)
+  (* 4. PARSING ALGORITHM *)
     
   let rec parse gram ts =
     let e = predict_all (empty_env gram ts) in
@@ -103,7 +144,7 @@ module Parser (G: ParsingTools.Grammar) = struct
                                            print_env_stats e;
                                            print_newline ());
                 e) e tsi in
-    SPassItem.exists (fun pas -> pas.n = gram.start && pas.ws = ws') e.pass
+    MPassItem.exists (fun pas _ -> pas.n = gram.start && pas.ws = ws') e.pass
 
   and predict_all e =
     let process_rule' n (r: G.rule) e =
@@ -140,7 +181,11 @@ module Parser (G: ParsingTools.Grammar) = struct
              [Final, wss] -> begin let it = { n  = act.n;
                                               i  = act.i;
                                               ws = fst (ParsingTools.WordSetStack.pop wss) } in
-                                   let pass = SPassItem.add it e.pass in
+                                   let cx = act.cntxt in
+                                   let pass = MPassItem.update it
+                                                (function None    -> Some (SContext.singleton cx)
+                                                        | Some cxs-> Some (SContext.add cx cxs))
+                                                e.pass in
                                    try_combine_RHS it { e with pass }
                              end
            | [_]         -> e
@@ -167,10 +212,10 @@ module Parser (G: ParsingTools.Grammar) = struct
     let process_nonterm pas n e =
       let cuts = Graph.apply trans (Graph.Nonterm (n, pas.i)) pas.ws in
       List.fold_right (process_cut pas n) cuts e in
-    let process_item pas e =
+    let process_item pas _ e =
       let ns = Context.compatible act.cntxt e.ts pas.n pas.i pas.ws in
       List.fold_right (process_nonterm pas) ns e
-    in SPassItem.fold process_item e.pass e
+    in MPassItem.fold process_item e.pass e
 
   and try_combine_RHS pas e =
     let process_cut act n cut e =
