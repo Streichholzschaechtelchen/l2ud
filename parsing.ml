@@ -208,10 +208,16 @@ module Parser (G: ParsingTools.Grammar) = struct
                                            print_env_stats e;
                                            print_newline ());
                 e) e tsi in
-    begin if !Flags.parse_trees then
-            let asts = all_asts e in
-            SAST.iter (fun a -> AST.print a; print_newline()) asts
-    end;
+    let asts = all_asts e in
+    if !Flags.parse_trees then
+            SAST.iter (fun a -> AST.print a; print_newline()) asts;
+    (if !Flags.png_to_draw <> "" && SAST.cardinal asts = 1 then
+            let oc = open_out "compatmp.dot" in
+            let dot = AST.to_dot (SAST.choose asts) in
+            output_string oc dot;
+            close_out oc;
+            ignore (Sys.command ("dot -Tpng compatmp.dot -o " ^ !Flags.png_to_draw));
+            Sys.remove "compatmp.dot");
     SCmpItem.exists (fun cmp -> cmp.cat = gram.start && (match ParsingTools.I.find_opt 0 cmp.wsm with
                                                            None -> false
                                                          | Some ws -> ws = ws')) e.cmps

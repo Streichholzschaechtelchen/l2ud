@@ -64,7 +64,8 @@ let _ =
              ("-t", Set_string text_to_parse, "Text to parse");
              ("-v", Set verbose, "Verbose");
              ("-s", Set statistics, "Show parsing statistics");
-             ("-p", Set parse_trees, "Show parse trees");]
+             ("-p", Set parse_trees, "Show parse trees");
+             ("-d", Set_string png_to_draw, "Draw syntax tree into PNG file (if unique)");]
     (fun _ -> ())
     "COMPAges Grammaticalis v0";
   let time = -. Unix.gettimeofday () in

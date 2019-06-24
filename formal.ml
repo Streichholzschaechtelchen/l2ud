@@ -4,6 +4,7 @@ module type Symbol = sig
   val compare: t -> t -> int
   val print  : t -> unit
   val lock_labels: < reset: unit -> unit; get: unit -> t >
+  val to_string: t -> string
 
 end
               
@@ -332,6 +333,7 @@ module MyString = struct
         c <- c + 1;
         new_label
     end
+  let to_string = fun x -> x
 
 end
 
