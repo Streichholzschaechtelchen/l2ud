@@ -63,7 +63,8 @@ let _ =
   Arg.parse [("-g", Set_string grammar_fn, "COMPA grammar to use");
              ("-t", Set_string text_to_parse, "Text to parse");
              ("-v", Set verbose, "Verbose");
-             ("-s", Set statistics, "Show parsing statistics")]
+             ("-s", Set statistics, "Show parsing statistics");
+             ("-p", Set parse_trees, "Show parse trees");]
     (fun _ -> ())
     "COMPAges Grammaticalis v0";
   let time = -. Unix.gettimeofday () in

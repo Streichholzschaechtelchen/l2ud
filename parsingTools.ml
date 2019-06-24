@@ -44,8 +44,16 @@ module WordSet = struct
       | y::x::t, g::f::e when f >= y -> let i, a, b = join f g a e in
                                         i@(aux a b)
       | _      , _                   -> raise Incompatible in
-    aux a b 
-                 
+    aux a b
+
+  (* return true iff the two (valid) word sets intersect *)
+  let rec intersect a b = match a, b with
+      []     , _
+    | _      , []                  -> false
+    | y::x::t, g::f::e when x >= g -> intersect t b
+    | y::x::t, g::f::e when f >= y -> intersect a e
+    | _      , _                   -> true
+      
   (* append a word set to another word set *)
   let append a b = match a, List.rev b with
       [], _  -> b
@@ -276,6 +284,16 @@ module Graph (G: Grammar) = struct
     let trans, merges = CutM.fold process_node cut ([], CutM.empty) in
     CutM.fold process_merge merges trans
 
+  (* apply one transition, given a label and its WordSet *)
+  let apply_one (t: transition) (s: WordSet.t): cut option =
+    match t.lst with
+      None   -> Some t.cut
+    | Some g -> try let cut = CutM.update g (function Some s' -> Some (WordSetStack.append s s')
+                                                    | _ -> assert false) t.cut in
+                    Some cut
+                with WordSet.Incompatible -> None
+
+  (* deprecated *)
   (* apply all possible transitions from a list, given a label and its WordSet *)
   let apply (ts: transition list) (l: label) (s: WordSet.t): cut list =
     let ts = List.filter (fun t -> t.lbl = l) ts in
@@ -354,32 +372,46 @@ module Graph (G: Grammar) = struct
     
 end
 
+                              
+module Int = struct
+  type t = int
+  let compare = compare
+end
+
+               
+module I = Map.Make(Int)
+
+                   
+module ContextEntry (G: Grammar) = struct
+
+  type t = { cat: G.nonterm;
+             wsm: WordSet.t I.t option }
+
+  let empty cat = { cat; wsm = None }
+
+end
+                    
+  
 module Context (G: Grammar) = struct
 
+  module E = ContextEntry(G)
+                                    
   module Nonterm = struct
     type t = G.nonterm
     let compare = compare
   end
                      
-  module Int = struct
-    type t = int
-    let compare = compare
-  end
-                         
   module M = Map.Make(Nonterm)
-  module I = Map.Make(Int)
 
   type nonterm = G.nonterm
   type term    = G.term
 
-  type t = WordSet.t I.t option M.t M.t
+  type t = E.t M.t
 
   (* create initial context from incats *)
   let create (incats: (nonterm * nonterm) list): t =
-    List.fold_right (fun (n, cat) m -> M.update cat (function None   -> Some (M.add n None M.empty)
-                                                            | Some l -> Some (M.add n None l)) m)
-      incats M.empty
-
+    List.fold_right (fun (n, cat) -> M.add n (E.empty cat)) incats M.empty
+ 
   (* extract substring matching positions from WordSet *)
   (* string is encoded as a list of terms *)
   let substr (ts: term list) (ws: WordSet.t) : term list =
@@ -387,57 +419,72 @@ module Context (G: Grammar) = struct
         []     , _
       | _      , []              -> []
       | x::y::t, h::u when y = o -> aux (o+1) t u
-      | x::y::t, h::u when x = o -> h::(aux (o+1) (y::(x+1)::t) u)
+      | x::y::t, h::u when x = o -> h::(aux (o+1) ((x+1)::y::t) u)
       | x::y::t, h::u when o < x -> aux (o+1) ws u
       | _      , _               -> assert false
     in aux 0 (List.rev ws) ts
-        
-  (* return context-compatible nonterminals of given category that may cover a given WordSet in text *)
-  let compatible (cntxt: t) (ts: term list) (cat: nonterm) (i: int) (ws: WordSet.t): nonterm list =
-    match M.find_opt cat cntxt with
-      None    -> []
-    | Some nl -> List.map fst (M.bindings (M.filter (fun n wss
-                                                     -> match wss with
-                                                          None   -> true
-                                                        | Some h ->
-                                                           match I.find_opt i h with
-                                                             None -> true
-                                                           | Some xt ->
-                                                              substr ts xt = substr ts ws) nl))
+
+  (* return true iff given category/dimension pair may cover a given WordSet in text w.r.t. context *)
+  let compat (cntxt: t) (ts: term list) (n: nonterm) (i: int) (wsm: WordSet.t I.t): bool =
+    let ws = I.find i wsm in
+    let intersecting = (M.exists (fun _ (e: E.t) ->
+                            match e.wsm with
+                              None   -> false
+                            | Some w -> I.exists (fun _ e' -> WordSet.intersect ws e') w) cntxt) in
+    match (M.find n cntxt).wsm with
+      None   when not intersecting -> true
+    | None                         -> false
+    | Some w                       -> begin match I.find_opt i w with
+                                        Some ws' when substr ts ws = substr ts ws' -> true
+                                      | _                                          -> false
+                                      end
 
   (* update context adding nonterminal of given category on given WordSet *)
-  let update (cntxt: t) (cat: nonterm) (i: int) (n: nonterm) (ws: WordSet.t): t =
-    M.update cat (function None    -> assert false
-                         | Some nl -> Some (M.update n (function  None
-                                                                  -> assert false
-                                                                | Some None
-                                                                  -> Some (Some (I.add i ws I.empty))
-                                                                | Some (Some m)
-                                                                  -> Some (Some (I.update i
-                                                                                   (function None -> Some ws
-                                                                                           | Some ws -> Some ws)
-                                                                              m))
-                                              ) nl))
-      cntxt
+  let reserve (cntxt: t) (n: nonterm) (i: int) (wsm: WordSet.t I.t): t =
+    M.update n (function None   -> assert false
+                       | Some e -> match (e: E.t).wsm with
+                                     None  -> (Some { e with wsm = Some wsm })
+                                   | Some _ -> Some e) cntxt
+
+  exception Cannot_unify
+              
+  (* unify two contexts if possible *)
+  let unify (c: t) (d: t) : t option =
+    let unify_i (i: WordSet.t I.t) (j: WordSet.t I.t) =
+      I.merge (fun k g h -> match g, h with
+                              None,    None                 -> None
+                            | Some ws, None                 -> Some ws
+                            | None,    Some yt              -> Some yt
+                            | Some ws, Some yt when ws = yt -> Some ws
+                            | _,       _                    -> raise Cannot_unify)
+        i j in
+    try Some (M.union (fun n a b -> match (a: E.t).wsm, b.wsm with
+                                    | None,   None   -> Some a
+                                    | Some e, None   -> Some a
+                                    | None,   Some f -> Some b
+                                    | Some e, Some f -> Some (E.{ a with wsm = Some (unify_i e f) }))
+                c d)
+    with Cannot_unify -> None
 
   (* print context *)
   let print (cntxt: t): unit =
     print_string "<context> = {\n";
-    let aux2 = function
-        None     -> print_string "[]";
-      | Some m'' -> print_string "[";
-                    I.iter (fun i ws -> print_string "#";
-                                        print_int i;
-                                        WordSet.print ws) m'';
-                    print_string "]" in
-    let aux1 cat m =
-      M.iter (fun n m' -> G.N.print n;
-                          print_string ":";
-                          G.N.print cat;
-                          print_string " -> (";
-                          aux2 m';
-                          print_string ")\n") m
-    in M.iter aux1 cntxt; print_string "}"
+    let aux1 n (e: E.t) =
+      G.N.print n;
+      print_string ":";
+      G.N.print e.cat;
+      match e.wsm with
+        None   -> print_string " none\n"
+      | Some w -> begin print_string " [ ";
+                        I.iter (fun i ws -> print_string "#";
+                                            print_int i;
+                                            print_string ":";
+                                            WordSet.print ws;
+                                            print_string " ") w
+                  end;
+      print_string "]\n"
+    in M.iter aux1 cntxt;
+       print_string "}"
 
 end
 

@@ -19,6 +19,9 @@ concrete Video = {
     Ceres : N = { s = table { Nom => "Ceres";
                               Acc => "Cererem" };
 	          g = Fem } ;
+    animal : N = { s = table { Nom => "animal";
+                               Acc => "animal" };
+	           g = Neut } ;
     magnus : A = { s = table { Nom => table { Masc => "magnus";
                                               Fem  => "magna";
 					      Neut => "magnum" };
