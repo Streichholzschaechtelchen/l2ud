@@ -211,13 +211,15 @@ module Parser (G: ParsingTools.Grammar) = struct
     let asts = all_asts e in
     if !Flags.parse_trees then
             SAST.iter (fun a -> AST.print a; print_newline()) asts;
-    (if !Flags.png_to_draw <> "" && SAST.cardinal asts = 1 then
+    (if !Flags.png_to_draw <> ""
+     then (if SAST.cardinal asts = 1 then
             let oc = open_out "compatmp.dot" in
             let dot = AST.to_dot (SAST.choose asts) in
-            output_string oc dot;
+            (output_string oc dot;
             close_out oc;
             ignore (Sys.command ("dot -Tpng compatmp.dot -o " ^ !Flags.png_to_draw));
-            Sys.remove "compatmp.dot");
+            Sys.remove "compatmp.dot")
+           else print_string "Syntax tree could not be drawn (not unique)!\n"));
     SCmpItem.exists (fun cmp -> cmp.cat = gram.start && (match ParsingTools.I.find_opt 0 cmp.wsm with
                                                            None -> false
                                                          | Some ws -> ws = ws')) e.cmps
@@ -267,7 +269,8 @@ module Parser (G: ParsingTools.Grammar) = struct
                                               ws    = fst (ParsingTools.WordSetStack.pop wss);
                                               cntxt = act.cntxt } in
                                    let pass = SPasItem.add it e.pass in
-                                   let e = try_unify it { e with pass } in
+                                   let acts = SActItem.remove act e.acts in
+                                   let e = try_unify it { e with pass; acts } in
                                    let ju = { rulid = act.rulid;
                                               cat   = act.cat;
                                               wsm   = ParsingTools.I.singleton act.i it.ws;

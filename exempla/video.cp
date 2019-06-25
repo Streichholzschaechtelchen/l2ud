@@ -11,6 +11,7 @@ concrete Video = {
     SUBJ = { s : Set };
     OBJ = { s : Set };
     S = { s : Set };
+    V = { s : Set };
 
   lin
     Iuppiter : N  = { s = table { Nom => "Iuppiter";
@@ -29,9 +30,10 @@ concrete Video = {
 			                      Fem  => "magnam";
 					      Neut => "magnum" }
 			     } };
+    uidit : V = { s = "uidit" } ;
     mkNP (n : N) : NP = { s = \\c: Case => n.s ! c };
     mkNP (n : N) (a : A) : NP = { s = \\c: Case => n.s ! c || a.s ! c ! n.g };
-    mkS (subj : SUBJ) (obj : OBJ) : S = { s = subj.s || "uidit" || obj.s };
+    mkS (subj : SUBJ) (obj : OBJ) (v : V) : S = { s = subj.s || v.s || obj.s };
     mkSUBJ (np : NP) : SUBJ = { s = np.s ! Nom };
     mkOBJ (np : NP) : OBJ = { s = np.s ! Acc };
 

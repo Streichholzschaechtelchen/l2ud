@@ -293,7 +293,6 @@ module Graph (G: Grammar) = struct
                     Some cut
                 with WordSet.Incompatible -> None
 
-  (* deprecated *)
   (* apply all possible transitions from a list, given a label and its WordSet *)
   let apply (ts: transition list) (l: label) (s: WordSet.t): cut list =
     let ts = List.filter (fun t -> t.lbl = l) ts in
@@ -304,6 +303,7 @@ module Graph (G: Grammar) = struct
                       cut::cuts
                   with WordSet.Incompatible -> cuts
     in List.fold_left process_transition [] ts
+
 
   (* generate graph from IDL expression *)
   let of_idlexpr expr =
