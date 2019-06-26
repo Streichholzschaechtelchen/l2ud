@@ -31,10 +31,11 @@ concrete Video = {
 					      Neut => "magnum" }
 			     } };
     uidit : V = { s = "uidit" } ;
-    mkNP (n : N) : NP = { s = \\c: Case => n.s ! c };
-    mkNP (n : N) (a : A) : NP = { s = \\c: Case => n.s ! c || a.s ! c ! n.g };
-    mkS (subj : SUBJ) (obj : OBJ) (v : V) : S = { s = subj.s || v.s || obj.s };
-    mkSUBJ (np : NP) : SUBJ = { s = np.s ! Nom };
-    mkOBJ (np : NP) : OBJ = { s = np.s ! Acc };
+    --    mkNP (head : N) : NP = { s = \\c: Case => head.s ! c };
+    mkNP (head : N) : NP = { s = head.s };
+    mkNP (head : N) (amod : A) : NP = { s = \\c: Case => head.s ! c || amod.s ! c ! head.g };
+    mkS (nsubj : SUBJ) (obj : OBJ) (head : V) : S = { s = nsubj.s || head.s || obj.s };
+    mkSUBJ (head : NP) : SUBJ = { s = head.s ! Nom };
+    mkOBJ (head : NP) : OBJ = { s = head.s ! Acc };
 
 }

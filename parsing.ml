@@ -145,53 +145,60 @@ module Parser (G: ParsingTools.Grammar) = struct
 
   (* 3. ABSTRACT SYNTAX TREES *)
 
-  let rec asts_of_contextEntry (en: env) (cmps: SCmpItem.t) (e: Context.E.t): SAST.t =
+  let rec asts_of_contextEntry (en: env) (djavu: SCmpItem.t) (cmps: SCmpItem.t) (e: Context.E.t): SAST.t =
     let matches_contextEntry cmp =
       (cmp.cat = e.cat) &&
         (match e.wsm with None   -> false
                         | Some w -> cmp.wsm = w) in
-    SCmpItem.fold (fun cmp as_ -> SAST.union (asts_of_cmpItem en cmps cmp) as_)
+    SCmpItem.fold (fun cmp as_ -> SAST.union (asts_of_cmpItem en djavu cmps cmp) as_)
       (SCmpItem.filter matches_contextEntry cmps)
       SAST.empty
 
-  and asts_of_cmpItem (en: env) (cmps: SCmpItem.t) (cmp: cmpItem): SAST.t =
-    let rec cartesian (asm: SAST.t Context.M.t): AST.t Context.M.t list =
-      match Context.M.min_binding_opt asm with
-        None          -> [Context.M.empty]
-      | Some (n, as_) -> let asm = Context.M.remove n asm in
-                         let acc = cartesian asm in
-                         SAST.fold (fun a acc ->
-                             List.fold_left (fun bdd am ->
-                                 (Context.M.add n a am)::bdd) [] acc)
-                           as_ acc in
-    let cntxt = Context.M.filter (fun n (e: Context.E.t) ->
-                    match e.wsm with None   -> false
-                                   | Some w -> true) cmp.cntxt in
-    let asm    = Context.M.map (function e -> asts_of_contextEntry en cmps e) cntxt in
-    let label  = ParsingTools.I.find cmp.rulid !rules in
-    let onetok = match ParsingTools.I.cardinal cmp.wsm with
-        1 -> begin match Context.substr en.ts (snd (ParsingTools.I.min_binding cmp.wsm)) with
-               [w] -> Some w
-             | _   -> None
-             end
-      | _ -> None in
-    match cartesian asm with
-      []                           -> assert false
-    | [a] when a = Context.M.empty -> begin match onetok with
-                                        None   -> SAST.singleton (AST.Leaf label)
-                                      | Some w -> SAST.singleton (AST.Token (w, label))
-                                      end
-    | ams                          -> List.fold_left (fun as_ am ->
-                                          SAST.add (AST.Node (label, Context.M.bindings am)) as_)
-                                        SAST.empty ams
-           
+  and asts_of_cmpItem (en: env) (djavu: SCmpItem.t) (cmps: SCmpItem.t) (cmp: cmpItem): SAST.t =
+    if SCmpItem.mem cmp djavu
+    then SAST.empty
+    else
+      begin
+        let rec cartesian (asm: SAST.t Context.M.t): AST.t Context.M.t list =
+          match Context.M.min_binding_opt asm with
+            None          -> [Context.M.empty]
+          | Some (n, as_) -> let asm = Context.M.remove n asm in
+                             let acc = cartesian asm in
+                             SAST.fold (fun a acc ->
+                                 List.fold_left (fun bdd am ->
+                                     (Context.M.add n a am)::bdd) [] acc)
+                               as_ acc in
+        let cntxt  = Context.M.filter (fun n (e: Context.E.t) ->
+                         match e.wsm with None   -> false
+                                        | Some w -> true) cmp.cntxt in
+        let asm    = let djavu = SCmpItem.add cmp djavu in
+                     Context.M.map (function e -> asts_of_contextEntry en djavu cmps e) cntxt in
+        let label  = ParsingTools.I.find cmp.rulid !rules in
+        let onetok = match ParsingTools.I.cardinal cmp.wsm with
+            1 -> let ws = snd (ParsingTools.I.min_binding cmp.wsm) in
+                 begin match Context.substr en.ts ws with
+                   [w] -> Some (w, List.hd (List.tl ws))
+                 | _   -> None
+                 end
+          | _ -> None in
+        match cartesian asm with
+          []                           -> assert false
+        | [a] when a = Context.M.empty -> begin match onetok with
+                                            None        -> SAST.singleton (AST.Leaf label)
+                                          | Some (w, i) -> SAST.singleton (AST.Token (w, i, label))
+                                          end
+        | ams                          -> List.fold_left (fun as_ am ->
+                                              SAST.add (AST.Node (label, Context.M.bindings am)) as_)
+                                            SAST.empty ams
+      end
+                                             
   let all_asts (en: env): SAST.t =
     let ws_tot = ParsingTools.WordSet.total en.ts in
     let cmps   = SCmpItem.filter (fun cmp -> cmp.cat = en.gram.start
                                              && (match ParsingTools.I.find_opt 0 cmp.wsm with
                                                    None    -> false
                                                  | Some w  -> w = ws_tot)) en.cmps in
-    SCmpItem.fold (fun cmp -> SAST.union (asts_of_cmpItem en en.cmps cmp)) cmps SAST.empty
+    SCmpItem.fold (fun cmp -> SAST.union (asts_of_cmpItem en SCmpItem.empty en.cmps cmp)) cmps SAST.empty
       
   (* 4. PARSING ALGORITHM *)
     
@@ -214,11 +221,14 @@ module Parser (G: ParsingTools.Grammar) = struct
     (if !Flags.png_to_draw <> ""
      then (if SAST.cardinal asts = 1 then
             let oc = open_out "compatmp.dot" in
-            let dot = AST.to_dot (SAST.choose asts) in
+            let dot = if !Flags.draw_ud
+                      then AST.to_dot_dep (SAST.choose asts)
+                      else AST.to_dot (SAST.choose asts) in
             (output_string oc dot;
             close_out oc;
-            ignore (Sys.command ("dot -Tpng compatmp.dot -o " ^ !Flags.png_to_draw));
-            Sys.remove "compatmp.dot")
+            ignore (Sys.command ("dot " ^ (if !Flags.draw_ud then "-Kfdp -n " else "")
+                                 ^ "-Tpng compatmp.dot -o " ^ !Flags.png_to_draw));
+            (*Sys.remove "compatmp.dot"*))
            else print_string "Syntax tree could not be drawn (not unique)!\n"));
     SCmpItem.exists (fun cmp -> cmp.cat = gram.start && (match ParsingTools.I.find_opt 0 cmp.wsm with
                                                            None -> false
@@ -254,9 +264,10 @@ module Parser (G: ParsingTools.Grammar) = struct
     let sing  = ParsingTools.WordSet.singleton j in
     let trans = Graph.next act.cut in
     let cuts  = Graph.apply trans (Graph.Term a) sing in
-    let process_cut cut e =
+    let process_cut (b, cut) e =
       let it = { act with cut } in
       let acts = SActItem.add it e.acts in
+      let acts = if b then acts else SActItem.remove act acts in
       try_rec it { e with acts }
     in List.fold_right process_cut cuts e
 
@@ -268,15 +279,18 @@ module Parser (G: ParsingTools.Grammar) = struct
                                               i     = act.i;
                                               ws    = fst (ParsingTools.WordSetStack.pop wss);
                                               cntxt = act.cntxt } in
-                                   let pass = SPasItem.add it e.pass in
-                                   let acts = SActItem.remove act e.acts in
-                                   let e = try_unify it { e with pass; acts } in
-                                   let ju = { rulid = act.rulid;
-                                              cat   = act.cat;
-                                              wsm   = ParsingTools.I.singleton act.i it.ws;
-                                              cntxt = act.cntxt } in
-                                   let cmps = SCmpItem.add ju e.cmps in
-                                   try_combine_RHS ju { e with cmps }
+                                   begin match SPasItem.find_opt it e.pass with
+                                     None   -> let pass = SPasItem.add it e.pass in
+                                               let acts = SActItem.remove act e.acts in
+                                               let e = try_unify it { e with pass; acts } in
+                                               let ju = { rulid = act.rulid;
+                                                          cat   = act.cat;
+                                                          wsm   = ParsingTools.I.singleton act.i it.ws;
+                                                          cntxt = act.cntxt } in
+                                               let cmps = SCmpItem.add ju e.cmps in
+                                               try_combine_RHS ju { e with cmps }
+                                   | Some _ -> e
+                                   end
                              end
            | [_]         -> e
            | _           -> assert false
@@ -286,17 +300,19 @@ module Parser (G: ParsingTools.Grammar) = struct
   and try_step (act: actItem) (e: env) =
     let trans = Graph.next act.cut in
     let cuts = Graph.apply trans Graph.Epsilon ParsingTools.WordSet.empty in
-    let process_cut cut e =
+    let process_cut (b, cut) e =
       let it = { act with cut } in
       let acts = SActItem.add it e.acts in
-      try_rec it { e with acts }
-    in List.fold_right process_cut cuts e
+      let acts = if b then acts else SActItem.remove act acts in
+      try_rec it { e with acts } in
+    List.fold_right process_cut cuts e
 
   and try_combine (act: actItem) (cmp: cmpItem) (e: env) =
-    let process_cut cut n i e cmp =
+    let process_cut (b, cut) n i e cmp =
       let cntxt = Context.reserve act.cntxt n i cmp.wsm in
       let it = { act with cut; cntxt } in
       let acts = SActItem.add it e.acts in
+      let acts = if b then acts else SActItem.remove act acts in
       try_rec it { e with acts } in
     let process_tran cmp e (tran: Graph.transition) =
       let n, i = match tran.lbl with

@@ -268,7 +268,7 @@ module Graph (G: Grammar) = struct
                                        merges)
                                   with WordSet.Incompatible -> (trans, merges)
                              end
-      | Node  es         -> (List.fold_left (process_edge (CutM.remove g cut) s) trans es, merges)
+      | Node es          -> (List.fold_left (process_edge (CutM.remove g cut) s) trans es, merges)
       | Final            -> (trans, merges)
     in
     let process_merge g (gs, i) trans =
@@ -285,22 +285,22 @@ module Graph (G: Grammar) = struct
     CutM.fold process_merge merges trans
 
   (* apply one transition, given a label and its WordSet *)
-  let apply_one (t: transition) (s: WordSet.t): cut option =
+  let apply_one (t: transition) (s: WordSet.t): (bool * cut) option =
     match t.lst with
-      None   -> Some t.cut
+      None   -> Some (false, t.cut)
     | Some g -> try let cut = CutM.update g (function Some s' -> Some (WordSetStack.append s s')
                                                     | _ -> assert false) t.cut in
-                    Some cut
+                    Some (true, cut)
                 with WordSet.Incompatible -> None
 
   (* apply all possible transitions from a list, given a label and its WordSet *)
-  let apply (ts: transition list) (l: label) (s: WordSet.t): cut list =
+  let apply (ts: transition list) (l: label) (s: WordSet.t): (bool * cut) list =
     let ts = List.filter (fun t -> t.lbl = l) ts in
     let process_transition cuts t = match t.lst with
-        None   -> t.cut::cuts
+        None   -> (false, t.cut)::cuts
       | Some g -> try let cut = CutM.update g (function Some s' -> Some (WordSetStack.append s s')
                                                       | _ -> assert false) t.cut in
-                      cut::cuts
+                      (true, cut)::cuts
                   with WordSet.Incompatible -> cuts
     in List.fold_left process_transition [] ts
 

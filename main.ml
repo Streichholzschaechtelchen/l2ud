@@ -48,8 +48,7 @@ let open_grammar filename =
   print_newline ();
   Formal.G.print_grammar grammar;
   print_newline ();
-  Formal.G.print_grammar' grammar';*)
-  close_in inx;
+  close_in inx;*)
   grammar
 
 let loop_test grammar_fn ts =
@@ -65,7 +64,8 @@ let _ =
              ("-v", Set verbose, "Verbose");
              ("-s", Set statistics, "Show parsing statistics");
              ("-p", Set parse_trees, "Show parse trees");
-             ("-d", Set_string png_to_draw, "Draw syntax tree into PNG file (if unique)");]
+             ("-d", Set_string png_to_draw, "Draw syntax tree into PNG file (if unique)");
+             ("-dep", Set draw_ud, "Draw dependency tree instead of AST");]
     (fun _ -> ())
     "COMPAges Grammaticalis v0";
   let time = -. Unix.gettimeofday () in

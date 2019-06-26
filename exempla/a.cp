@@ -5,6 +5,6 @@ concrete A = {
 
   lin
     oneA : S = { s = "a" };
-    moreAs (s1 : S) (s2 : S) : S = { s = s1.s || s2.s };
+    moreAs (s1 : S) (s2 : S) : S = { s = s1.s \/ s1.s };
    
 }

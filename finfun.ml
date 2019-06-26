@@ -291,13 +291,31 @@ let tl1_expr (params_: Tgfpm.param_map)
              (e: Tgfpm.expr)
              (outc: Tgfpm.ident)
     : Tl1.record * Tl1.ident =
+  Ast.nummerlappar#reset ();
   let evaluate = evaluate params_ fli old_args new_args outc in
   (*Flatten record, replacing subrecords fields by dotted fields*)
   let rec flatten b (pref, acc) (i, (e: Tgfpm.expr)) =
     match e.expr_node with
       Tgfpm.Erecord r -> let new_pref = if b then (string_project pref i) else i
-                         in List.fold_left (flatten true) (new_pref, acc) r
-    | _               -> (pref, (i, e)::acc) in
+                         in List.fold_left rec_flatten (new_pref, acc) r
+    | _               -> (pref, (i, e)::acc)
+  (*Replace all partially evaluated record fields by evaluated lambdas*)
+  and rec_flatten (pref, acc) (i, (e: Tgfpm.expr)) =
+    let rec aux (e: Tgfpm.expr) =
+      match e.expr_node, e.expr_type with
+        Tgfpm.Elambda (_, _, _), Tgfpm.Ttable (_, _) 
+      | Tgfpm.Etable _         , Tgfpm.Ttable (_, _)  -> e
+      | _                      , Tgfpm.Ttable (i', t) -> let v = Ast.nummerlappar#next () in
+                                                         let e1 = Tgfpm.{ expr_node = Eident v;
+                                                                          expr_type = Tparam i' } in
+                                                         let e2 = Tgfpm.{ expr_node = Tgfpm.Eselect (e, e1);
+                                                                          expr_type = t } in
+                                                         let e3 = aux e2 in
+                                                         let expr_node = Tgfpm.Elambda (v, i', e3) in
+                                                         { e with expr_node }
+      | _                      , _                    -> e 
+    in flatten true (pref, acc) (i, (aux e))
+  in
   let e = snd ( (flatten false) ("", []) (outc, e) ) in
   (*Convert Tgfpm.expr -> Tl1.expr*)
   let rec convert (e: Tgfpm.expr) =
