@@ -11,7 +11,8 @@ type typ = Tset
                                     
 and record_decl = (ident * typ) list
 
-type expr_nod = Estring of string
+type expr_nod = Eepsilon
+              | Estring of string
               | Eident of ident
               | Eselect of expr * expr
               | Eproject of expr * ident
@@ -21,6 +22,7 @@ type expr_nod = Estring of string
               | Edisj of expr * expr
               | Elock of expr
               | Elambda of ident * ident * expr
+              | Efor of ident * ident * expr
               | Erecord of record
               | Etable of table
               | Ecovtable of ident * expr list
@@ -69,7 +71,8 @@ let print_typ t =
 
 let print_expr e =
   let rec string_of_expr e = match e.expr_node with
-      Estring s -> "\"" ^ s ^ "\""
+      Eepsilon -> "[]"
+    | Estring s -> "\"" ^ s ^ "\""
     | Eident i  -> i.id
     | Eselect (e1, e2) -> "Select(" ^ (string_of_expr e1) ^ ", "
                           ^ (string_of_expr e2) ^ ")"
@@ -85,6 +88,8 @@ let print_expr e =
     | Elock e          -> "Lock(" ^ (string_of_expr e) ^ ")"
     | Elambda (i1, i2, e) -> "Lambda(" ^ i1.id ^ ":" ^ i2.id ^ ", "
                              ^ (string_of_expr e) ^ ")"
+    | Efor (i1, i2, e) -> "For(" ^ i1.id ^ ":" ^ i2.id ^ ", "
+                          ^ (string_of_expr e) ^ ")"
     | Erecord r        -> (List.fold_left (fun s rr -> s ^ (string_of_record rr) ^ "; ") "Record(" r) ^ ")"
     | Etable t         -> (List.fold_left (fun s tt -> s ^ (string_of_table tt) ^ "; ") "Table(" t) ^ ")"
     | Ecovtable (p, es)-> (List.fold_left (fun s ee -> s ^ (string_of_expr ee) ^ "; ") ("COVTable:" ^ p.id ^ "(") es) ^ ")"
@@ -123,3 +128,9 @@ let print_file f =
   List.iter (fun l -> print_string ("  " ^ l.lincat_name.id ^ " = "); print_typ l.lincat_type; print_newline ()) f.lincats;
   print_string "lin\n";
   List.iter (fun l -> print_string ("  " ^ l.lin_name.id ^ " "); print_lin l; print_newline ()) f.lins
+
+let summary f =
+  (string_of_int (List.length f.lincats))
+  ^ " cats, "
+  ^ (string_of_int (List.length f.lins))
+  ^ " rules"

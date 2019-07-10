@@ -36,7 +36,7 @@ rule read = parse
   | "++"       { PLUSPLUS }
   | "||"       { BARBAR } (*INTERLEAVE*) (* IDL operators *)
   | '`'        { LOCK }
-  | "\/"       { DISJUNCTION }
+  | "\\/"      { DISJUNCTION }
   | '.'        { DOT }
   | ':'        { COLON }
   | ';'        { SEMICOLON }
@@ -57,7 +57,10 @@ rule read = parse
   | "if"       { IF }
   | "then"     { THEN }
   | "else"     { ELSE }
+  | "for"      { FOR }
+  | "do"       { DO }
   | "skip"     { SKIP }
+  | "[]"       { EPSILON }
   | "Set"      { SET }
   | "concrete" { CONCRETE } (* No abstract syntax, no flags, no printname *)
   | "lin"      { LIN }
@@ -77,7 +80,7 @@ and read_single_line_comment = parse
 
 and read_multiline_comment = parse
   | "-}"       { read lexbuf }
-  | '\n'       { next_line lexbuf; read lexbuf }
+  | '\n'       { next_line lexbuf; read_multiline_comment lexbuf }
   | eof        { EOF }
   | _          { read_multiline_comment lexbuf }
 

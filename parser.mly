@@ -13,6 +13,7 @@
 %token TABLE
 %token TRUE FALSE
 %token IF THEN ELSE SKIP
+%token FOR DO
 
 (* Symbols *)
 %token OPAREN CPAREN OCURLY CCURLY OBRACK CBRACK
@@ -20,6 +21,7 @@
 %token EQUAL
 %token BIG_RARROW
 %token GFLOCK
+%token EPSILON
        
 (* Operators *)
 %token LOCK
@@ -31,8 +33,10 @@
 %token DOT
 %token COLON SEMICOLON BAR
 
-(* Precedence *)       
+(* Precedence *)
 %left BIG_RARROW
+%nonassoc DO
+%nonassoc ELSE
 %left DISJUNCTION
 %left BARBAR
 %left PLUSPLUS
@@ -123,6 +127,8 @@ expr:
           expr_loc  = $startpos } }
       
 expr_node:
+    | EPSILON
+      { Eepsilon }
     | s = STRING
       { Estring s }
     | i = ident
@@ -142,7 +148,9 @@ expr_node:
     | e = expr; DOT; i = ident
       { Eproject (e, i) }
     | LAMLAM; i1 = ident; COLON; i2 = ident; BIG_RARROW; e = expr
-      { Elambda (i1,i2,e) }                                    
+      { Elambda (i1,i2,e) }
+    | FOR; i1 = ident; COLON; i2 = ident; DO; e = expr
+      { Efor (i1,i2,e) }
     | OCURLY; r = record_fields; CCURLY
       { Erecord r }
     | TABLE; OCURLY; t = table_fields; CCURLY
@@ -171,11 +179,11 @@ record_fields:
       { r }
             
 nonempty_record_fields:
-    | r = record_field
+    | r = record_field; SEMICOLON?
       { [r] }
-    | re = nonempty_record_fields; SEMICOLON; r = record_field
+    | r = record_field; SEMICOLON; re = nonempty_record_fields
       { r::re }
-    | re = nonempty_record_fields; SEMICOLON; lock_field
+    | lock_field; SEMICOLON; re = nonempty_record_fields
       { re }
 
 record_field:
@@ -193,9 +201,9 @@ record_decl_fields:
       { r }
             
 nonempty_record_decl_fields:
-    | r = record_decl_field
+    | r = record_decl_field; SEMICOLON?
       { [r] }
-    | re = nonempty_record_decl_fields; SEMICOLON; r = record_decl_field
+    | r = record_decl_field; SEMICOLON; re = nonempty_record_decl_fields
       { r::re }
 
 record_decl_field:
@@ -203,9 +211,9 @@ record_decl_field:
       { (i,t) }
                                                
 table_fields:
-    | t = table_field
+    | t = table_field; SEMICOLON?
       { [t] }
-    | ta = table_fields; SEMICOLON; t = table_field
+    | t = table_field; SEMICOLON; ta = table_fields
       { t::ta }
 
 table_field:
@@ -213,9 +221,9 @@ table_field:
       { (i,e) }
 
 covtable_fields:
-    | e = expr
+    | e = expr; SEMICOLON?
       { [e] }
-    | c = covtable_fields; SEMICOLON; e = expr
+    | e = expr; SEMICOLON; c = covtable_fields
       { e::c }
                               
 ident:

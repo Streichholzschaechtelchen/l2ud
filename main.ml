@@ -32,14 +32,22 @@ let open_grammar filename =
   let inx = open_in filename in
   let lexbuf = Lexing.from_channel inx in
   lexbuf.lex_curr_p <- { lexbuf.lex_curr_p with pos_fname = filename };
+  Printing.printi 1 7 "Parsing... ";
   let gfpm_file = parse_with_error lexbuf in
+  Printing.printi_after_done 2 7 "Processing includecc... ";
   let gfpm_file = Includecc.includecc_file gfpm_file in
+  Printing.printi_after_done 3 7 ("Typing: " ^ (Gfpm.summary gfpm_file) ^ "... ");
   let tgfpm_file = type_with_error gfpm_file in
+  Printing.printi_after_done 4 7 ("Computing finite functions: " ^ (Tgfpm.summary tgfpm_file) ^ "... ");
   let tl1_file = Finfun.tl1_file tgfpm_file in
+  Printing.printi_after_done 5 7 ("Processing records: " ^ (Tl1.summary tl1_file) ^ "... ");
   let tl2_file = Rec.tl2_file tl1_file in
+  Printing.printi_after_done 6 7 ("Converting into EIDLPMCFG: " ^ (Tl2.summary tl2_file) ^ "... ");
   let grammar = Convert.convert_file tl2_file in
+  (*Formal.G.print_grammar grammar;*)
+  Printing.printi_after_done 7 7 ("Developing conditions: " ^ (Formal.G.summary grammar) ^ "... ");
   let grammar' = Formal.G.develop_grammar grammar in
-  Formal.G.print_grammar grammar';
+  Printing.print_done ();
   (*Gfpm.print_file gfpm_file;
   print_newline ();
   Tgfpm.print_file tgfpm_file;
@@ -59,6 +67,10 @@ let loop_test grammar_fn ts =
   match accepted with
     true -> print_string "Accepted!\n"
   | _    -> print_string "Rejected!\n"
+
+let loop_compile grammar_fn =
+  let grammar' = open_grammar grammar_fn in
+  Formal.G.print_grammar grammar'
        
 let _ =
   Arg.parse [("-g", Set_string grammar_fn, "COMPA grammar to use");
@@ -67,11 +79,14 @@ let _ =
              ("-s", Set statistics, "Show parsing statistics");
              ("-p", Set parse_trees, "Show parse trees");
              ("-d", Set_string png_to_draw, "Draw syntax tree into PNG file (if unique)");
-             ("-dep", Set draw_ud, "Draw dependency tree instead of AST");]
+             ("-dep", Set draw_ud, "Draw dependency tree instead of AST");
+             ("-c", Set compile_only, "Compile only (do not parse)")]
     (fun _ -> ())
     "COMPAges Grammaticalis v0";
   let time = -. Unix.gettimeofday () in
-  loop_test !grammar_fn (String.split_on_char ' ' !text_to_parse);
+  (match !compile_only with
+     true  -> loop_compile !grammar_fn
+   | false -> loop_test !grammar_fn (String.split_on_char ' ' !text_to_parse));
   let time = time +. Unix.gettimeofday () in
   print_string "(";
   print_float time;

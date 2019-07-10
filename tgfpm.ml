@@ -29,7 +29,8 @@ let can_cast t1 t2 = match t1, t2 with
 type expr = { expr_node: expr_nod;
               expr_type: typ }
                
-and expr_nod = Estring of string 
+and expr_nod = Eepsilon
+             | Estring of string 
              | Eident of ident
              | Eselect of expr * expr
              | Eproject of expr * ident
@@ -39,6 +40,7 @@ and expr_nod = Estring of string
              | Edisj of expr * expr
              | Elock of expr
              | Elambda of ident * ident * expr
+             | Efor of ident * ident * expr
              | Erecord of record
              | Etable of table
              | Eif of expr * expr * expr
@@ -94,7 +96,8 @@ let print_typ t =
 
 let print_expr_node e =
   let rec string_of_expr_node = function
-      Estring s -> "\"" ^ s ^ "\""
+      Eepsilon  -> "[]"
+    | Estring s -> "\"" ^ s ^ "\""
     | Eident i  -> i
     | Eselect (e1, e2) -> "Select(" ^ (string_of_expr_node e1.expr_node) ^ ", "
                           ^ (string_of_expr_node e2.expr_node) ^ ")"
@@ -110,6 +113,8 @@ let print_expr_node e =
     | Elock e          -> "Lock(" ^ (string_of_expr_node e.expr_node) ^ ")"
     | Elambda (i1, i2, e) -> "Lambda(" ^ i1 ^ ":" ^ i2 ^ ", "
                              ^ (string_of_expr_node e.expr_node) ^ ")"
+    | Efor (i1, i2, e) -> "For(" ^ i1 ^ ":" ^ i2 ^ ", "
+                          ^ (string_of_expr_node e.expr_node) ^ ")"
     | Erecord r        -> (List.fold_left (fun s rr -> s ^ (string_of_record rr) ^ "; ") "Record(" r) ^ ")"
     | Etable t         -> (List.fold_left (fun s tt -> s ^ (string_of_table tt) ^ "; ") "Table(" t) ^ ")"
     | Eif (e1, e2, e3) -> "If(" ^ (string_of_expr_node e1.expr_node) ^ ", "
@@ -151,3 +156,9 @@ let print_file f =
   M.iter (fun i t -> print_string ("  " ^ i ^ " = "); print_typ t; print_newline ()) f.lincats;
   print_string "lin\n";
   M.iter (fun i l -> print_string ("  " ^ i ^ " "); print_lin l; print_newline ()) f.lins
+
+let summary f =
+  (string_of_int (M.cardinal f.lincats))
+  ^ " cats, "
+  ^ (string_of_int (M.cardinal f.lins))
+  ^ " rules"

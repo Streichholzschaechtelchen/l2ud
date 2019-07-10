@@ -5,3 +5,4 @@ let verbose = ref false
 let statistics = ref false
 let parse_trees = ref false
 let draw_ud = ref false
+let compile_only = ref false

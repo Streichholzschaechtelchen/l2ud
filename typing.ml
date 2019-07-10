@@ -41,7 +41,8 @@ module TypingErrors = struct
                     "Operands of boolean operator must be boolean" (*34*);
                     "Operand of boolean operator must be boolean" (*35*);
                     "Record fields cannot be boolean" (*36*);
-                    "Type boolean is not allowed in table" (*37*);       
+                    "Type boolean is not allowed in table" (*37*);
+                    "Bound variable in for loop must be of a parameter type" (*38*);
                  |]
                    
   let throw ?(info="") (loc: Lexing.position) err_id =
@@ -80,7 +81,10 @@ let rec type_expr (params: Tgfpm.param_map) (expr: Gfpm.expr)
         : Tgfpm.expr =
   let type_expr = type_expr params in
   match expr.expr_node with
-    Gfpm.Estring s
+    Gfpm.Eepsilon
+    -> { expr_node = Tgfpm.Eepsilon;
+         expr_type = Tgfpm.Tset }
+  | Gfpm.Estring s
     -> { expr_node = Tgfpm.Estring s;
          expr_type = Tgfpm.Tset }
   | Gfpm.Eident i
@@ -143,6 +147,16 @@ let rec type_expr (params: Tgfpm.param_map) (expr: Gfpm.expr)
                                   expr_type = Tgfpm.Ttable (i2.id, t_e.expr_type) }
                        end
        | _          -> TypingErrors.throw i2.id_loc 13
+       end
+  | Gfpm.Efor (i1, i2, e)
+    -> begin match type_ident i2 with
+         Tgfpm.Ttyp -> begin Hashtbl.add types i1.id (Tparam i2.id);
+                             let t_e = type_expr e in
+                             Hashtbl.remove types i1.id;
+                             { expr_node = Tgfpm.Efor (i1.id, i2.id, t_e);
+                               expr_type = t_e.expr_type }
+                       end
+       | _          -> TypingErrors.throw i2.id_loc 38
        end
   | Gfpm.Erecord r
     -> let _, r_node, r_type =

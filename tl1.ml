@@ -17,7 +17,8 @@ type log = Land of log * log
          | Lnot of log
          | Lproject of ident * ident
   
-type expr = Estring of string
+type expr = Eepsilon
+          | Estring of string
           | Eident of ident
           | Eproject of ident * ident
           | Econcat of expr * expr
@@ -47,7 +48,8 @@ let print_typ t =
 
 let print_expr e =
   let rec string_of_expr = function
-      Estring s -> "\"" ^ s ^ "\""
+      Eepsilon  -> "[]"
+    | Estring s -> "\"" ^ s ^ "\""
     | Eident i  -> i
     | Eproject (i1, i2)-> "Project(" ^ i1 ^ ", " ^ i2 ^ ")"
     | Econcat (e1, e2) -> "Concat(" ^ (string_of_expr e1) ^ ", "
@@ -88,3 +90,9 @@ let print_file f =
   M.iter (fun i t -> print_string ("  " ^ i ^ " = "); print_typ t; print_newline ()) f.lincats;
   print_string "lin\n";
   M.iter (fun i l -> print_string ("  " ^ i ^ " "); print_lin l; print_newline ()) f.lins
+
+let summary f =
+  (string_of_int (M.cardinal f.lincats))
+  ^ " cats, "
+  ^ (string_of_int (M.cardinal f.lins))
+  ^ " rules"

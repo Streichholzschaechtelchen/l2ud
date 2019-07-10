@@ -3,6 +3,8 @@ concrete Video = {
   param
     Case = Nom | Acc;
     Gender = Masc | Fem | Neut;
+    Person = Sg1 | Sg2 | Sg3;
+    Tense  = Prs | Imp;
 
   lincat
     N = { s : Case => Set; g : Gender };
@@ -11,12 +13,12 @@ concrete Video = {
     SUBJ = { s : Set };
     OBJ = { s : Set };
     S = { s : Set };
-    V = { s : Set };
+    V = { s : Tense => Person => Set };
 
   lin
-    Iuppiter : N  = { s = table { Nom => "Iuppiter";
-    	       	      	  	  Acc => "Iouem" };
-		      g = Masc } ;
+    Iuppiter : N = { s = table { Nom => "Iuppiter";
+    	        	  	 Acc => "Iouem" };
+		     g = Masc } ;
     Ceres : N = { s = table { Nom => "Ceres";
                               Acc => "Cererem" };
 	          g = Fem } ;
@@ -30,11 +32,18 @@ concrete Video = {
 			                      Fem  => "magnam";
 					      Neut => "magnum" }
 			     } };
-    uidit : V = { s = "uidit" } ;
-    --    mkNP (head : N) : NP = { s = \\c: Case => head.s ! c };
+    uidit : V = { s = table { Prs => table { Sg1 => "uideo";
+					     Sg2 => "uidis";
+					     Sg3 => "uidit" };
+			      Imp => table { Sg1 => "uidebam";
+					     Sg2 => "uidebas";
+					     Sg3 => "uidebat" }
+		    }
+      };
+    
     mkNP (head : N) : NP = { s = head.s };
     mkNP (head : N) (amod : A) : NP = { s = \\c: Case => head.s ! c || amod.s ! c ! head.g };
-    mkS (nsubj : SUBJ) (obj : OBJ) (head : V) : S = { s = nsubj.s || head.s || obj.s };
+    mkS (nsubj : SUBJ) (obj : OBJ) (head : V) : S = for p : Person do (for t : Tense do { s = nsubj.s || head.s ! t ! p || obj.s });
     mkSUBJ (head : NP) : SUBJ = { s = head.s ! Nom };
     mkOBJ (head : NP) : OBJ = { s = head.s ! Acc };
 

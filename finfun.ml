@@ -73,7 +73,7 @@ let update_cats old_cats param values =
 (* Remove block nodes *)
 let rec remove_block (e: Tgfpm.expr) : Tgfpm.expr =
   match e.expr_node with
-    Tgfpm.Estring _ | Tgfpm.Eident _ -> e 
+      Tgfpm.Eepsilon | Tgfpm.Estring _ | Tgfpm.Eident _ -> e 
     | Tgfpm.Eselect (e1, e2)
       -> { e with expr_node = Tgfpm.Eselect (remove_block e1,
                                              remove_block e2) }
@@ -94,6 +94,8 @@ let rec remove_block (e: Tgfpm.expr) : Tgfpm.expr =
       -> { e with expr_node = Tgfpm.Elock (remove_block e') }
     | Tgfpm.Elambda (i1, i2, e')
       -> { e with expr_node = Tgfpm.Elambda (i1, i2, remove_block e') }
+    | Tgfpm.Efor (i1, i2, e')
+      -> { e with expr_node = Tgfpm.Efor (i1, i2, remove_block e') }
     | Tgfpm.Erecord r
       -> { e with expr_node = Tgfpm.Erecord (List.map (fun (i, e) -> (i, remove_block e)) r) }
     | Tgfpm.Etable t
@@ -125,13 +127,88 @@ let rec contains_skip : Tgfpm.record -> bool = function
                 | _           -> contains_skip t
                 end
 
+(*Develop for expressions, producing several new exprs*)
+let rec develop_for (params_: Tgfpm.param_map)
+          (m: Tgfpm.ident Tgfpm.M.t)
+          (e: Tgfpm.expr)
+        : Tgfpm.expr list =
+  let develop_for = develop_for params_ in
+  let rec cartesian a b =
+    match a, b with
+      []   , _
+    | _    , [] -> []
+    | h::t , _  -> let acc = cartesian t b in
+                   List.fold_left (fun acc x -> (h, x)::acc) acc b in
+  let rec cartesiann = function
+      []   -> [[]]
+    | h::t -> let acc = cartesiann t in
+              List.fold_left (fun bdd ac ->
+                  List.fold_left (fun bdd x ->
+                      (x::ac)::bdd) bdd h)
+                [] acc in
+  let rec cartesian3 a b c =
+    let abc = cartesiann [a; b; c] in
+    List.map (function [x;y;z] -> (x,y,z) | _ -> assert false) abc in
+  let rec apply f l = List.flatten (List.map f l) in
+  match e.expr_node with
+    Tgfpm.Eepsilon
+  | Tgfpm.Estring _
+  | Tgfpm.Etrue
+  | Tgfpm.Efalse
+  | Tgfpm.Eskip                -> [e]
+  | Tgfpm.Eident i             -> begin match Tgfpm.M.find_opt i m with
+                                    None   -> [e]
+                                  | Some v -> [{ e with expr_node = Tgfpm.Eident v }]
+                                  end
+  | Tgfpm.Eselect (e1, e2)     -> let e1s = develop_for m e1 and e2s = develop_for m e2 in
+                                  let e12s = cartesian e1s e2s in
+                                  apply (fun (e1, e2) -> [{ e with expr_node = Tgfpm.Eselect (e1, e2) }]) e12s
+  | Tgfpm.Efor (i1, i2, e')    -> let params = Tgfpm.M.find i2 params_ in
+                                  apply (fun v -> develop_for (Tgfpm.M.add i1 v m) e') params
+  | Tgfpm.Eproject (e', i)     -> let e's = develop_for m e' in
+                                  apply (fun e' -> [{ e with expr_node = Tgfpm.Eproject (e', i) }]) e's
+  | Tgfpm.Eblock e'            -> let e's = develop_for m e' in
+                                  apply (fun e' -> [{ e with expr_node = Tgfpm.Eblock e' }]) e's
+  | Tgfpm.Econcat (e1, e2)     -> let e1s = develop_for m e1 and e2s = develop_for m e2 in
+                                  let e12s = cartesian e1s e2s in
+                                  apply (fun (e1, e2) -> [{ e with expr_node = Tgfpm.Econcat (e1, e2) }]) e12s
+  | Tgfpm.Einterl (e1, e2)     -> let e1s = develop_for m e1 and e2s = develop_for m e2 in
+                                  let e12s = cartesian e1s e2s in
+                                  apply (fun (e1, e2) -> [{ e with expr_node = Tgfpm.Einterl (e1, e2) }]) e12s
+  | Tgfpm.Edisj (e1, e2)       -> let e1s = develop_for m e1 and e2s = develop_for m e2 in
+                                  let e12s = cartesian e1s e2s in
+                                  apply (fun (e1, e2) -> [{ e with expr_node = Tgfpm.Edisj (e1, e2) }]) e12s
+  | Tgfpm.Elock e'             -> let e's = develop_for m e' in
+                                  apply (fun e' -> [{ e with expr_node = Tgfpm.Elock e' }]) e's
+  | Tgfpm.Elambda (i1, i2, e') -> let e's = develop_for m e' in
+                                  apply (fun e' -> [{ e with expr_node = Tgfpm.Elambda (i1, i2, e') }]) e's
+  | Tgfpm.Erecord r            -> let rs = List.map (fun (i,e) -> List.map (fun x -> (i,x)) (develop_for m e)) r in
+                                  let rs' = cartesiann rs in
+                                  apply (fun r -> [{ e with expr_node = Tgfpm.Erecord r }]) rs'
+  | Tgfpm.Etable t             -> let ts = List.map (fun (i,e) -> List.map (fun x -> (i,x)) (develop_for m e)) t in
+                                  let ts' = cartesiann ts in
+                                  apply (fun t -> [{ e with expr_node = Tgfpm.Etable t }]) ts'
+  | Tgfpm.Eif (e1, e2, e3)     -> let e1s = develop_for m e1 and e2s = develop_for m e2 and e3s = develop_for m e3 in
+                                  let e123s = cartesian3 e1s e2s e3s in
+                                  apply (fun (e1, e2, e3) -> [{ e with expr_node = Tgfpm.Eif (e1, e2, e3) }]) e123s
+  | Tgfpm.Eand (e1, e2)        -> let e1s = develop_for m e1 and e2s = develop_for m e2 in
+                                  let e12s = cartesian e1s e2s in
+                                  apply (fun (e1, e2) -> [{ e with expr_node = Tgfpm.Eand (e1, e2) }]) e12s
+  | Tgfpm.Eor (e1, e2)         -> let e1s = develop_for m e1 and e2s = develop_for m e2 in
+                                  let e12s = cartesian e1s e2s in
+                                  apply (fun (e1, e2) -> [{ e with expr_node = Tgfpm.Eor (e1, e2) }]) e12s
+  | Tgfpm.Enot e'              -> let e's = develop_for m e' in
+                                  apply (fun e' -> [{ e with expr_node = Tgfpm.Enot e' }]) e's
+  | _                          -> assert false
+            
 (*Pre-compute expression, deleting tables and lambda nodes, simplifying logic*)
 let rec evaluate (params_: Tgfpm.param_map)
                  (fli: formal_lincat_map)
                  (old_args: (Tgfpm.ident * Tgfpm.ident) list)
                  (new_args: (Tl1.ident * Tl1.ident) list)
                  (outc: Tgfpm.ident)
-                 (m: Tgfpm.ident Tgfpm.M.t) (e: Tgfpm.expr)
+                 (m: Tgfpm.ident Tgfpm.M.t)
+                 (e: Tgfpm.expr)
         : Tgfpm.expr =
   let evaluate = evaluate params_ fli old_args new_args outc in
   let rec search k = function
@@ -149,7 +226,8 @@ let rec evaluate (params_: Tgfpm.param_map)
     | _          -> assert false
   in                          
   match e.expr_node with
-    Tgfpm.Estring _ -> e
+    Tgfpm.Eepsilon
+  | Tgfpm.Estring _ -> e
   | Tgfpm.Eident i  -> begin try { e with expr_node = Tgfpm.Eident (Tgfpm.M.find i m) }
                              with Not_found -> begin try make_record i e
                                                      with _ -> e
@@ -172,8 +250,9 @@ let rec evaluate (params_: Tgfpm.param_map)
                                             { e with expr_node = Tgfpm.Eproject (e_e', new_field) }
                         | _              -> assert false
                   end
-             | _, _ -> assert false
+             | _, _ -> assert false 
        end
+  | Tgfpm.Efor (_, _, _) -> assert false
   | Tgfpm.Eproject (e', i)
     -> begin let e_e' = evaluate m e' in
              match e_e'.expr_node with
@@ -188,7 +267,7 @@ let rec evaluate (params_: Tgfpm.param_map)
                         -> { e with expr_node = Tgfpm.Eproject ({ e' with expr_node = Tgfpm.Eident j }, i) })
              | Tgfpm.Eproject (e'', i')
                -> { e with expr_node = Tgfpm.Eproject (e'', string_project i i') }
-             | _ -> assert false                                    
+             | _ -> assert false
        end
   | Tgfpm.Eblock _ -> assert false
   | Tgfpm.Econcat (e1, e2)    ->
@@ -207,7 +286,7 @@ let rec evaluate (params_: Tgfpm.param_map)
      let e_e1 = evaluate m e1 and e_e2 = evaluate m e2 in
      begin match e_e1.expr_node, e_e2.expr_node with
        Tgfpm.Eskip, _ | _, Tgfpm.Eskip -> Tgfpm.skip
-       | _, _ -> { e with expr_node = Tgfpm.Edisj (e_e1, e_e2) }      
+       | _, _ -> { e with expr_node = Tgfpm.Edisj (e_e1, e_e2) }
      end
   | Tgfpm.Elock e'            ->
      let e_e' = evaluate m e' in
@@ -225,15 +304,13 @@ let rec evaluate (params_: Tgfpm.param_map)
      let e_r = List.map (fun (i,e) -> (i, evaluate m e)) r in
      begin if contains_skip e_r
            then Tgfpm.skip
-           else { e with
-                  expr_node = Tgfpm.Erecord e_r }
+           else { e with expr_node = Tgfpm.Erecord e_r }
      end
   | Tgfpm.Etable t            ->
-     { e with expr_node = Tgfpm.Etable (List.map (fun (i,e) -> (i, evaluate m e)) t) }
+     let e_t = List.map (fun (i,e) -> (i, evaluate m e)) t in     
+     { e with expr_node = Tgfpm.Etable e_t }
   | Tgfpm.Eif (e1, e2, e3)    ->
-     begin let e_e1 = evaluate m e1
-           and e_e2 = evaluate m e2
-           and e_e3 = evaluate m e3 in 
+     begin let e_e1 = evaluate m e1 and e_e2 = evaluate m e2 and e_e3 = evaluate m e3 in
            match e_e1.expr_node, e_e2.expr_node, e_e3.expr_node with
              Tgfpm.Etrue  , Tgfpm.Eskip, _           -> Tgfpm.skip
            | Tgfpm.Etrue  , _          , _           -> e_e2
@@ -245,16 +322,16 @@ let rec evaluate (params_: Tgfpm.param_map)
      end
   | Tgfpm.Eand (e1, e2)       ->
      begin let e_e1 = evaluate m e1 and e_e2 = evaluate m e2 in
-           match e_e1.expr_node, e_e2.expr_node with
-             Tgfpm.Efalse, _          
-           | _           , Tgfpm.Efalse
-             -> { e with expr_node = Tgfpm.Efalse }
-           | Tgfpm.Etrue , _
-             -> e_e2
-           | _           , Tgfpm.Etrue
-             -> e_e1
-           | _           , _
-             -> { e with expr_node = Tgfpm.Eand (e_e1, e_e2) }
+               match e_e1.expr_node, e_e2.expr_node with
+                 Tgfpm.Efalse, _          
+               | _           , Tgfpm.Efalse
+                 -> { e with expr_node = Tgfpm.Efalse }
+               | Tgfpm.Etrue , _
+                 -> e_e2
+               | _           , Tgfpm.Etrue
+                 -> e_e1
+               | _           , _
+                 -> { e with expr_node = Tgfpm.Eand (e_e1, e_e2) }
      end
   | Tgfpm.Eor (e1, e2)        ->
      begin let e_e1 = evaluate m e1 and e_e2 = evaluate m e2 in
@@ -320,7 +397,8 @@ let tl1_expr (params_: Tgfpm.param_map)
   (*Convert Tgfpm.expr -> Tl1.expr*)
   let rec convert (e: Tgfpm.expr) =
     match e.expr_node with
-      Tgfpm.Eskip            -> raise Skip
+      Tgfpm.Eepsilon         -> Tl1.Eepsilon
+    | Tgfpm.Eskip            -> raise Skip
     | Tgfpm.Estring s        -> Tl1.Estring s
     | Tgfpm.Eident i         -> Tl1.Eident i
     | Tgfpm.Eproject (e', j) -> begin match e'.expr_node with
@@ -410,8 +488,8 @@ let tl1_lin (params: Tgfpm.param_map)
             (tfm: to_formal_map)
             (i: Tgfpm.ident)
             (l: Tgfpm.lin)
-            (acc: Tl1.lin_map)
-    : Tl1.lin_map =
+            ((j: int), (acc: Tl1.lin_map))
+    : int * Tl1.lin_map =
   let t_lin_args = l.lin_args
   and t_lin_expr = l.lin_expr
   and t_lin_outc = l.lin_outc in
@@ -424,6 +502,11 @@ let tl1_lin (params: Tgfpm.param_map)
       cats in
   let all_cats = List.map (fun (_, l) -> Tgfpm.M.find l tfm) t_lin_args in
   let cats_nuples = List.fold_left cartesian [[]] all_cats in
+  (*List.iter (fun x -> print_int (List.length x);
+                      print_string ": ";
+                      List.iter print_string x;
+                      print_string " ") all_cats;
+  print_int (List.length cats_nuples); print_newline ();*)
   let handle_nuple (j, bdd) nuple =
     let nuple = List.rev nuple in
     let lin_args = List.map2 (fun a b -> (fst a,b)) t_lin_args nuple in
@@ -437,14 +520,26 @@ let tl1_lin (params: Tgfpm.param_map)
           (j+1, Tl1.M.add lin_ident new_lin bdd)
       with Skip -> (j, bdd)
     in List.fold_left handle_log_and_expr (j, bdd) lin_logs_and_exprs      
-  in snd (List.fold_left handle_nuple (0, acc) cats_nuples)
+  in List.fold_left handle_nuple (j, acc) cats_nuples
+
+let tl1_lin_develop (params: Tgfpm.param_map)
+                    (fli: formal_lincat_map)
+                    (tfm: to_formal_map)
+                    (i: Tgfpm.ident)
+                    (l: Tgfpm.lin)
+                    (acc: Tl1.lin_map)
+    : Tl1.lin_map =
+  let lin_exprs = develop_for params Tgfpm.M.empty l.lin_expr in
+  let ls        = List.map (fun lin_expr -> { l with lin_expr }) lin_exprs in
+  (*print_int (List.length ls); print_newline ();*)
+  snd (List.fold_right (tl1_lin params fli tfm i) ls (0, acc)) 
    
 let tl1_lins (params: Tgfpm.param_map)
              (fli: formal_lincat_map)
              (tfm: to_formal_map)
              (l: Tgfpm.lin_map)
   : Tl1.lin_map =
-  Tgfpm.M.fold (tl1_lin params fli tfm) l Tl1.M.empty
+  Tgfpm.M.fold (tl1_lin_develop params fli tfm) l Tl1.M.empty
 
 let tl1_file (file: Tgfpm.file) : Tl1.file =
   let t_params  = file.params

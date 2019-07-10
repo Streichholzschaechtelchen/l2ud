@@ -165,6 +165,11 @@ module EIDLPMCFG (T: Symbol) (N: Symbol) = struct
                             print_string " <- \n";
                             List.iter print_rule rule) g.rules
 
+  let summary g =
+    let n_rules = M.fold (fun cat rules acc -> acc + (List.length rules)) g.rules 0 in
+    (string_of_int (M.cardinal g.rules))
+    ^ " cats, " ^ (string_of_int n_rules) ^ " rules"
+
   (* 2. LINEARIZATION FUNCTIONS *)
 
   (* Erase diamonds, returning list of terminals and non-terminals *)
@@ -395,21 +400,19 @@ module EIDLPMCFG (T: Symbol) (N: Symbol) = struct
   (* Compute all new categories associated with old categories *)
   let compute_tasm g: tril array list M.t =
     let ftm = fields_to_mark g in
-    (*temp*)
-    print_string "compute_tasm\n";
-    NontermiS.iter (fun (cat,i) -> N.print cat; print_int i; print_newline()) ftm;
-    print_newline();
-    (*endtemp*)
     let cats: tril array list M.t = M.empty in
     let arity = function
         ARule a_r -> Array.length (a_r.exprs)
       | ERule e_r -> Array.length (e_r.exprs) in
-    let cats = M.fold (fun cat rs cats -> M.add cat [Array.make (arity (List.hd rs)) TUndef] cats) g.rules cats in
+    let cats = M.fold (fun cat rs cats -> match rs with
+                                            []   -> cats
+                                          | h::t -> M.add cat [Array.make (arity h) TUndef] cats)
+                 g.rules cats in
     let process_nti (n,i) cats =
-      M.update n (function None     -> assert false
+      M.update n (function None     -> None
                          | Some tas -> Some (List.fold_left (fun l ta -> let tat, taf = ta, Array.copy ta in
-                                                                   tat.(i) <- TTrue; taf.(i) <- TFalse;
-                                                                   tat::taf::l) [] tas))
+                                                                         tat.(i) <- TTrue; taf.(i) <- TFalse;
+                                                                         tat::taf::l) [] tas))
         cats
     in NontermiS.fold process_nti ftm cats
 
@@ -475,43 +478,58 @@ module EIDLPMCFG (T: Symbol) (N: Symbol) = struct
     let tasm  = compute_tasm g in
     let nsm   = M.mapi (fun cat tas -> List.map (nonterm_of_cat cat) tas) tasm in
     let rec new_incats_choices acc (n, cat) =
-      let tas = M.find cat tasm in
-      let ns  = M.find cat nsm in
+      let tas = match M.find_opt cat tasm with
+          None     -> []
+        | Some tas -> tas in
+      let ns  = match M.find_opt cat nsm with
+          None     -> []
+        | Some ns  -> ns in
       List.fold_left2 (fun bdd ta n' ->
           List.fold_left (fun cee choices -> ((n, n', ta)::choices)::cee)
             bdd acc) [] tas ns
     in
     let rules =
       M.fold (fun cat rs rules
-              -> let outcatmsk = List.hd (M.find cat tasm) in
-                 List.fold_left (fun rules -> function
-                       ARule a_r -> let incats3l = List.fold_left new_incats_choices [[]] a_r.incats in
-                                    let incatsl  = List.map (List.map (fun (n, cat, _) -> (n, cat))) incats3l in
-                                    let outcatl  = List.map (compute_new_outcat cat outcatmsk a_r.exprs) incats3l in
-                                    List.fold_left2 (fun rules incats outcat ->
-                                        M.update outcat (function None ->
-                                                                   Some ([ARule ({ a_r with incats })])
-                                                                | Some l ->
-                                                                   Some ((ARule ({ a_r with incats }))::l)) rules)
-                                      rules incatsl outcatl
-                     | ERule e_r -> let incats3l = List.fold_left new_incats_choices [[]] e_r.incats in
-                                    let incatsl  = List.map (List.map (fun (n, cat, _) -> (n, cat))) incats3l in
-                                    let outcatl  = List.map (compute_new_outcat cat outcatmsk e_r.exprs) incats3l in
-                                    let logicl   = List.map (fun incats3 -> compute_logic incats3 e_r.cndtn) incats3l in
-                                    let outlogl  = List.combine outcatl logicl in
-                                    let exprs    = e_r.exprs in
-                                    List.fold_left2 (fun rules incats (outcat, logic) ->
-                                        match logic with
-                                          TTrue -> M.update outcat
-                                                     (function None ->
-                                                                Some ([ARule ({ exprs; incats })])
-                                                             | Some l ->
-                                                                Some ((ARule ({ exprs; incats }))::l)) rules
-                                        | TFalse -> rules
-                                        | TUndef -> assert false)
-                                      rules incatsl outlogl)
-                   rules rs) g.rules M.empty in
-    let new_starts = M.find g.start nsm in
+              -> match M.find_opt cat tasm with
+                   None
+                   -> rules
+                 | Some tas
+                   -> let outcatmsk = List.hd tas in
+                      List.fold_left (fun rules -> function
+                            ARule a_r -> let incats3l = List.fold_left new_incats_choices [[]] a_r.incats in
+                                         let incatsl  = List.map (List.map (fun (n, cat, _) -> (n, cat)))
+                                                          incats3l in
+                                         let outcatl  = List.map (compute_new_outcat cat outcatmsk a_r.exprs)
+                                                          incats3l in
+                                         List.fold_left2 (fun rules incats outcat ->
+                                             M.update outcat (function None ->
+                                                                        Some ([ARule ({ a_r with incats })])
+                                                                     | Some l ->
+                                                                        Some ((ARule ({ a_r with incats }))::l))
+                                               rules) rules incatsl outcatl
+                          | ERule e_r -> let incats3l = List.fold_left new_incats_choices [[]] e_r.incats in
+                                         let incatsl  = List.map (List.map (fun (n, cat, _) -> (n, cat)))
+                                                          incats3l in
+                                         let outcatl  = List.map (compute_new_outcat cat outcatmsk e_r.exprs)
+                                                          incats3l in
+                                         let logicl   = List.map (fun incats3 -> compute_logic incats3 e_r.cndtn)
+                                                          incats3l in
+                                         let outlogl  = List.combine outcatl logicl in
+                                         let exprs    = e_r.exprs in
+                                         List.fold_left2 (fun rules incats (outcat, logic) ->
+                                             match logic with
+                                               TTrue -> M.update outcat
+                                                          (function None ->
+                                                                     Some ([ARule ({ exprs; incats })])
+                                                                  | Some l ->
+                                                                     Some ((ARule ({ exprs; incats }))::l)) rules
+                                             | TFalse -> rules
+                                             | TUndef -> assert false)
+                                           rules incatsl outlogl)
+                        rules rs) g.rules M.empty in
+    let new_starts = match M.find_opt g.start nsm with
+        None        -> [g.start]
+      | Some starts -> starts in
     let n = match M.find_opt g.start g.rules with
         None        -> 0
       | Some []     -> assert false

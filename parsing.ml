@@ -164,10 +164,11 @@ module Parser (G: ParsingTools.Grammar) = struct
             None          -> [Context.M.empty]
           | Some (n, as_) -> let asm = Context.M.remove n asm in
                              let acc = cartesian asm in
-                             SAST.fold (fun a acc ->
-                                 List.fold_left (fun bdd am ->
-                                     (Context.M.add n a am)::bdd) [] acc)
-                               as_ acc in
+                             SAST.fold (fun a bdd ->
+                                 List.fold_left (fun cee am ->
+                                     (Context.M.add n a am)::cee)
+                                   bdd acc )
+                               as_ [] in
         let cntxt  = Context.M.filter (fun n (e: Context.E.t) ->
                          match e.wsm with None   -> false
                                         | Some w -> true) cmp.cntxt in
@@ -228,7 +229,7 @@ module Parser (G: ParsingTools.Grammar) = struct
             close_out oc;
             ignore (Sys.command ("dot " ^ (if !Flags.draw_ud then "-Kfdp -n " else "")
                                  ^ "-Tpng compatmp.dot -o " ^ !Flags.png_to_draw));
-            (*Sys.remove "compatmp.dot"*))
+            Sys.remove "compatmp.dot")
            else print_string "Syntax tree could not be drawn (not unique)!\n"));
     SCmpItem.exists (fun cmp -> cmp.cat = gram.start && (match ParsingTools.I.find_opt 0 cmp.wsm with
                                                            None -> false

@@ -40,7 +40,8 @@ let rec assoc_expr (e: G.idlexpr) : G.idlexpr =
   
 let rec convert_expr (e: Tl2.expr) : G.idlexpr =
   match e with
-    Tl2.Estring s        -> G.T s
+    Tl2.Eepsilon         -> G.E
+  | Tl2.Estring s        -> G.T s
   | Tl2.Eproject (id, i) -> G.N (id, i)
   | Tl2.Econcat (e1, e2) -> G.C ([convert_expr e1; convert_expr e2])
   | Tl2.Einterl (e1, e2) -> G.I ([convert_expr e1; convert_expr e2])
