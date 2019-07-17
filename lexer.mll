@@ -59,6 +59,7 @@ rule read = parse
   | "else"     { ELSE }
   | "for"      { FOR }
   | "do"       { DO }
+  | "variants {}"{ EMPTY }
   | "skip"     { SKIP }
   | "[]"       { EPSILON }
   | "Set"      { SET }

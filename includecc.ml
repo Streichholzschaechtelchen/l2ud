@@ -35,6 +35,7 @@ let parse_with_error lexbuf =
 
 let get_lins filename =
   let tables = get_tables filename in
+  (*print_string tables;*)
   let lexbuf = Lexing.from_string tables in
   lexbuf.lex_curr_p <- { lexbuf.lex_curr_p with pos_fname = filename };
   parse_with_error lexbuf
@@ -45,5 +46,4 @@ let update_lins =
 let includecc_file (file: Gfpm.file) : Gfpm.file =
   let lins = update_lins file.lins file.includeccs in
   { file with lins }
-  
-(*let filename = "/home/franz/GU/gf/gf-rgl/src/latin/LexiconLat.gf"*)
+ 

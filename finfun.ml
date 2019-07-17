@@ -73,7 +73,7 @@ let update_cats old_cats param values =
 (* Remove block nodes *)
 let rec remove_block (e: Tgfpm.expr) : Tgfpm.expr =
   match e.expr_node with
-      Tgfpm.Eepsilon | Tgfpm.Estring _ | Tgfpm.Eident _ -> e 
+      Tgfpm.Eepsilon | Tgfpm.Eempty | Tgfpm.Estring _ | Tgfpm.Eident _ -> e 
     | Tgfpm.Eselect (e1, e2)
       -> { e with expr_node = Tgfpm.Eselect (remove_block e1,
                                              remove_block e2) }
@@ -152,6 +152,7 @@ let rec develop_for (params_: Tgfpm.param_map)
   let rec apply f l = List.flatten (List.map f l) in
   match e.expr_node with
     Tgfpm.Eepsilon
+  | Tgfpm.Eempty
   | Tgfpm.Estring _
   | Tgfpm.Etrue
   | Tgfpm.Efalse
@@ -227,6 +228,7 @@ let rec evaluate (params_: Tgfpm.param_map)
   in                          
   match e.expr_node with
     Tgfpm.Eepsilon
+  | Tgfpm.Eempty
   | Tgfpm.Estring _ -> e
   | Tgfpm.Eident i  -> begin try { e with expr_node = Tgfpm.Eident (Tgfpm.M.find i m) }
                              with Not_found -> begin try make_record i e
@@ -380,16 +382,20 @@ let tl1_expr (params_: Tgfpm.param_map)
   and rec_flatten (pref, acc) (i, (e: Tgfpm.expr)) =
     let rec aux (e: Tgfpm.expr) =
       match e.expr_node, e.expr_type with
-        Tgfpm.Elambda (_, _, _), Tgfpm.Ttable (_, _) 
-      | Tgfpm.Etable _         , Tgfpm.Ttable (_, _)  -> e
-      | _                      , Tgfpm.Ttable (i', t) -> let v = Ast.nummerlappar#next () in
-                                                         let e1 = Tgfpm.{ expr_node = Eident v;
-                                                                          expr_type = Tparam i' } in
-                                                         let e2 = Tgfpm.{ expr_node = Tgfpm.Eselect (e, e1);
-                                                                          expr_type = t } in
-                                                         let e3 = aux e2 in
-                                                         let expr_node = Tgfpm.Elambda (v, i', e3) in
-                                                         { e with expr_node }
+        Tgfpm.Elambda (j, t, e'), Tgfpm.Ttable (_, _)  -> let e'' = aux e' in
+                                                          let expr_node = Tgfpm.Elambda (j, t, e'') in
+                                                          { e with expr_node }
+      | Tgfpm.Etable t          , Tgfpm.Ttable (_, _)  -> let t' = List.map (fun (j, e') -> (j, aux e')) t in
+                                                          let expr_node = Tgfpm.Etable t' in
+                                                          { e with expr_node }
+      | _                       , Tgfpm.Ttable (i', t) -> let v = Ast.nummerlappar#next () in
+                                                          let e1 = Tgfpm.{ expr_node = Eident v;
+                                                                           expr_type = Tparam i' } in
+                                                          let e2 = Tgfpm.{ expr_node = Tgfpm.Eselect (e, e1);
+                                                                           expr_type = t } in
+                                                          let e3 = aux e2 in
+                                                          let expr_node = Tgfpm.Elambda (v, i', e3) in
+                                                          { e with expr_node }
       | _                      , _                    -> e 
     in flatten true (pref, acc) (i, (aux e))
   in
@@ -398,6 +404,7 @@ let tl1_expr (params_: Tgfpm.param_map)
   let rec convert (e: Tgfpm.expr) =
     match e.expr_node with
       Tgfpm.Eepsilon         -> Tl1.Eepsilon
+    | Tgfpm.Eempty           -> Tl1.Eempty
     | Tgfpm.Eskip            -> raise Skip
     | Tgfpm.Estring s        -> Tl1.Estring s
     | Tgfpm.Eident i         -> Tl1.Eident i

@@ -9,7 +9,8 @@ let fill_in_lincat (i: Tl2.ident) _ (rs: formal_rule_map) =
 
 let rec assoc_expr (e: G.idlexpr) : G.idlexpr =
   match e with
-    E
+    G.E
+  | G.V
   | G.T _
   | G.N (_,_) -> e
   | G.C es    -> let es' = List.fold_left
@@ -41,6 +42,7 @@ let rec assoc_expr (e: G.idlexpr) : G.idlexpr =
 let rec convert_expr (e: Tl2.expr) : G.idlexpr =
   match e with
     Tl2.Eepsilon         -> G.E
+  | Tl2.Eempty           -> G.V
   | Tl2.Estring s        -> G.T s
   | Tl2.Eproject (id, i) -> G.N (id, i)
   | Tl2.Econcat (e1, e2) -> G.C ([convert_expr e1; convert_expr e2])

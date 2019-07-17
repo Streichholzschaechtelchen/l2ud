@@ -21,7 +21,7 @@
 %token EQUAL
 %token BIG_RARROW
 %token GFLOCK
-%token EPSILON
+%token EPSILON EMPTY
        
 (* Operators *)
 %token LOCK
@@ -90,7 +90,7 @@ param:
 param_enum:
     | i = ident
       { [i] }
-    | e = param_enum; BAR; i = ident
+    | i = ident; BAR; e = param_enum
       { i::e }
 
 standalone_lins:
@@ -129,6 +129,8 @@ expr:
 expr_node:
     | EPSILON
       { Eepsilon }
+    | EMPTY
+      { Eempty }    
     | s = STRING
       { Estring s }
     | i = ident
@@ -156,7 +158,7 @@ expr_node:
     | TABLE; OCURLY; t = table_fields; CCURLY
       { Etable t }
     | TABLE; i = ident; OBRACK; c = covtable_fields; CBRACK
-      { Ecovtable (i, (List.rev c)) }
+      { Ecovtable (i, c) }
     | IF; e1 = expr; THEN; e2 = expr; ELSE; e3 = expr
       { Eif (e1, e2, e3) }
     | e1 = expr; AND; e2 = expr
@@ -181,6 +183,8 @@ record_fields:
 nonempty_record_fields:
     | r = record_field; SEMICOLON?
       { [r] }
+    | lock_field; SEMICOLON?
+      { [] }
     | r = record_field; SEMICOLON; re = nonempty_record_fields
       { r::re }
     | lock_field; SEMICOLON; re = nonempty_record_fields

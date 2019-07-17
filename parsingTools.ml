@@ -186,6 +186,7 @@ module type Grammar = sig
   type nonterm = N.t
                    
   type idlexpr = E
+               | V
                | T of term
                | N of nonterm * int
                | C of idlexpr list
@@ -228,6 +229,7 @@ module Graph (G: Grammar) = struct
              | Lock   of graph
              | Unlock of graph
              | Final
+             | Empty
 
   and edge = graph * label
                       
@@ -270,6 +272,7 @@ module Graph (G: Grammar) = struct
                              end
       | Node es          -> (List.fold_left (process_edge (CutM.remove g cut) s) trans es, merges)
       | Final            -> (trans, merges)
+      | Empty            -> (trans, merges)
     in
     let process_merge g (gs, i) trans =
       if List.length gs = i
@@ -309,6 +312,7 @@ module Graph (G: Grammar) = struct
   let of_idlexpr expr =
     let rec aux succ = function
         G.E       -> Final
+      | G.V       -> Empty
       | G.T t     -> Node ([succ, Term t])
       | G.N (n,i) -> Node ([succ, Nonterm (n,i)])
       | G.C ies   -> List.fold_left aux succ (List.rev ies) 
@@ -360,6 +364,7 @@ module Graph (G: Grammar) = struct
                              print_string ")"
                        end
     | Final         -> print_string "Final"
+    | Empty         -> print_string "Empty"
 
   (* print cut *)
   let print_cut cut =

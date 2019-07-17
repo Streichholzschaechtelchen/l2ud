@@ -18,6 +18,7 @@ type log = Land of log * log
          | Lproject of ident * ident
   
 type expr = Eepsilon
+          | Eempty
           | Estring of string
           | Eident of ident
           | Eproject of ident * ident
@@ -49,6 +50,7 @@ let print_typ t =
 let print_expr e =
   let rec string_of_expr = function
       Eepsilon  -> "[]"
+    | Eempty    -> "variants {}"
     | Estring s -> "\"" ^ s ^ "\""
     | Eident i  -> i
     | Eproject (i1, i2)-> "Project(" ^ i1 ^ ", " ^ i2 ^ ")"

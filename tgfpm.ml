@@ -19,17 +19,37 @@ type typ = Ttyp  (* the type of finite types *)
          | Trecord of (ident * typ) list
          | Tbogus (* placeholder for prenex *)
 
-let can_cast t1 t2 = match t1, t2 with
-    t    , u     when t = u -> true
-  | Tset , Tbool            -> true
-  | Tskip, Tbool            -> false
-  | Tskip, _                -> true
-  | _    , _                -> false
+let rec unify t1 t2 = match t1, t2 with
+    t    , u     when t = u -> Some t
+  | Tbool, Tset
+  | Tset , Tbool            -> Some Tbool
+  | Tskip, Tbool
+  | Tbool, Tskip            -> None
+  | Tskip, t
+  | t    , Tskip            -> Some t
+  | Ttable (i, t), Ttable (j, u) when i = j
+    -> begin match unify t u with
+         Some v -> Some (Ttable (i, v))
+       | None   -> None
+       end
+  | Trecord its, Trecord jut
+    -> begin match List.fold_left2 (fun acc (i, t) (j, u) ->
+                       match acc with
+                         Some kvu when i = j -> begin match unify t u with
+                                                  Some v -> Some ((i, v)::kvu)
+                                                | None   -> None
+                                                end
+                       | _                   -> None) (Some []) its jut
+       with None     -> None
+          | Some kvu -> Some (Trecord (List.rev kvu))
+       end
+  | _    , _                -> None
        
 type expr = { expr_node: expr_nod;
               expr_type: typ }
                
 and expr_nod = Eepsilon
+             | Eempty
              | Estring of string 
              | Eident of ident
              | Eselect of expr * expr
@@ -57,6 +77,8 @@ and expr_nod = Eepsilon
 
 and table = (ident * expr) list
 and record = (ident * expr) list
+
+let skip = { expr_node = Eskip; expr_type = Tskip }
 
 type param_map = ident list M.t
 
@@ -97,6 +119,7 @@ let print_typ t =
 let print_expr_node e =
   let rec string_of_expr_node = function
       Eepsilon  -> "[]"
+    | Eempty    -> "variants {}"
     | Estring s -> "\"" ^ s ^ "\""
     | Eident i  -> i
     | Eselect (e1, e2) -> "Select(" ^ (string_of_expr_node e1.expr_node) ^ ", "

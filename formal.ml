@@ -48,6 +48,7 @@ module EIDLPMCFG (T: Symbol) (N: Symbol) = struct
   (* 1. GRAMMAR DEFINITION *)
 
   type idlexpr = E
+               | V
                | T of term
                | N of nonterm * int
                | C of idlexpr list
@@ -78,6 +79,7 @@ module EIDLPMCFG (T: Symbol) (N: Symbol) = struct
                    
   let rec print_idlexpr = function
       E       -> print_string "Epsilon"
+    | V       -> print_string "EmptySet"
     | T t     -> T.print t
     | N (n,i) -> begin N.print n;
                        print_string "[";
@@ -298,6 +300,7 @@ module EIDLPMCFG (T: Symbol) (N: Symbol) = struct
 
   and linearize_e li = function
       E       -> DTLS.singleton []
+    | V       -> DTLS.empty
     | T t     -> DTLS.singleton [Term t]
     | N (n,i) -> (try DTLS.singleton (M.find n li).(i)
                   with Not_found -> assert false)
@@ -375,7 +378,8 @@ module EIDLPMCFG (T: Symbol) (N: Symbol) = struct
   let fields_to_mark g =
     let used_ntis = used_in_cndtn g in
     let rec process_idlexpr args (ntis, new_) = function
-      E      -> (ntis, new_)
+      E
+    | V
     | T _    -> (ntis, new_)
     | N (n,i)-> let cat = M.find n args in
                 begin match NontermiS.mem (cat,i) ntis with
@@ -439,6 +443,7 @@ module EIDLPMCFG (T: Symbol) (N: Symbol) = struct
   let compute_new_outcat cat msk ies incats3 =
     let rec process_ie = function
         E      -> TFalse
+      | V      -> TTrue
       | T _    -> TTrue
       | N (n,i)-> get_trinary_value (n,i) incats3
       | C ies

@@ -50,11 +50,13 @@ module Com = struct
   let cmd_fold t str a0 f =
     put t (str ^ " | ? wc -l");
     let n_lines = get t in
-    let n_lines = 1 + int_of_string n_lines in
-    put t str;
-    skip t;
-    let lines = getn t n_lines a0 f in
-    lines
+    try
+      let n_lines = 1 + int_of_string n_lines in
+      put t str;
+      skip t;
+      let lines = getn t n_lines a0 f in
+      lines
+    with Failure _ -> a0
 
   let cmd t str =
     cmd_fold t str "" concat_

@@ -1,9 +1,12 @@
 concrete V = {
 
+  includecc
+    "/home/franz/GU/Codices/l2ud/lexicon/latin/DictLatVergil.gf";
+    
   param
-    Case = Nom | Acc | Gen | Dat | Abl | Voc;
+    Case = Abl | Acc | Dat | Gen | Nom | Voc;
     Number = Sg | Pl;
-    Gender = Masc | Fem | Neut;
+    Gender = Fem | Masc | Neutr;
     VActForm = IndPrf1 | IndPrf2 | IndPrf3 | SbjPrf1 | SbjPrf2 | SbjPrf3
              | IndPlp1 | IndPlp2 | IndPlp3 | SbjPlp1 | SbjPlp2 | SbjPlp3
              | IndPrs1 | IndPrs2 | IndPrs3 | SbjPrs1 | SbjPrs2 | SbjPrs3
@@ -16,7 +19,7 @@ concrete V = {
               | IndImp1Pass | IndImp2Pass | IndImp3Pass | SbjImp1Pass | SbjImp2Pass | SbjImp3Pass
               | IndFtr1Pass | IndFtr2Pass | IndFtr3Pass;
     VSupine = SAcc | SAbl;
-    Degree = Pos | Comp | Sup;
+    Degree = Posit | Compar | Superl;
     Adpos = Pre | Post | PolyPre | PolyPost;
 
   lincat
@@ -64,8 +67,6 @@ concrete V = {
     PrepA = { s : Degree => Gender => Number => Set;
               c : Case };
     AP = { s : Degree => Gender => Number => Case => Set };
-    PrepAP = { s : Degree => Gender => Number => Set;
-	       c : Case };
     Adv = { s : Degree => Set };
     Coord = { s : Set };
     Prep = { s : Set; a : Adpos; c : Case };
@@ -101,7 +102,7 @@ concrete V = {
 					     Voc => "uulpes" } };
 		   g = Fem };
     
-    magnus : A = { s = table { Pos => table { Masc => table { Sg => table { Nom => "magnus";
+    magnus : A = { s = table { Posit => table { Masc => table { Sg => table { Nom => "magnus";
 									    Acc => "magnum";
 									    Gen => "magni";
 									    Dat => "magno";
@@ -125,7 +126,7 @@ concrete V = {
 									   Dat => "magnis";
 									   Abl => "magnis";
 									   Voc => "magnae" } };
-					      Neut => table { Sg => table { Nom => "magnum";
+					      Neutr => table { Sg => table { Nom => "magnum";
 									    Acc => "magnum";
 									    Gen => "magni";
 									    Dat => "magno";
@@ -137,7 +138,7 @@ concrete V = {
 									    Dat => "magnis";
 									    Abl => "magnis";
 									    Voc => "magna" } } };
-			       Comp => table { Masc => table { Sg => table { Nom => "maior";
+			       Compar => table { Masc => table { Sg => table { Nom => "maior";
 									     Acc => "maiorem";
 									     Gen => "maioris";
 									     Dat => "maiori";
@@ -161,7 +162,7 @@ concrete V = {
 									    Dat => "maioribus";
 									    Abl => "maioribus";
 									    Voc => "maiores" } };
-					       Neut => table { Sg => table { Nom => "maius";
+					       Neutr => table { Sg => table { Nom => "maius";
 									     Acc => "maius";
 									     Gen => "maioris";
 									     Dat => "maiori";
@@ -173,7 +174,7 @@ concrete V = {
 									     Dat => "maioribus";
 									     Abl => "maioribus";
 									     Voc => "maiora" } } };
-			       Sup => table { Masc => table { Sg => table { Nom => "maximus";
+			       Superl => table { Masc => table { Sg => table { Nom => "maximus";
 									    Acc => "maximum";
 									    Gen => "maximi";
 									    Dat => "maximo";
@@ -197,7 +198,7 @@ concrete V = {
 									   Dat => "maximis";
 									   Abl => "maximis";
 									   Voc => "maximae" } };
-					      Neut => table { Sg => table { Nom => "maximum";
+					      Neutr => table { Sg => table { Nom => "maximum";
 									    Acc => "maximum";
 									    Gen => "maximi";
 									    Dat => "maximo";
@@ -209,9 +210,9 @@ concrete V = {
 									    Dat => "maximis";
 									    Abl => "maximis";
 									    Voc => "maxima" } } } };
-		   adv = table { Pos => "magne";
-				 Comp => "maius";
-				 Sup => "maxime" } };
+		   adv = table { Posit => "magne";
+				 Compar => "maius";
+				 Superl => "maxime" } };
 
     uideo : V2 = { act = table { Sg => table { IndPrf1 => "uidi";
 					       IndPrf2 => "uidisti";
@@ -307,7 +308,7 @@ concrete V = {
 									       Dat => "uidentibus";
 									       Abl => "uidentibus";
 									       Voc => "uidentes" } };
-						  Neut => table { Sg => table { Nom => "uidens";
+						  Neutr => table { Sg => table { Nom => "uidens";
 										Acc => "uidens";
 										Gen => "uidentis";
 										Dat => "uidenti";
@@ -343,7 +344,7 @@ concrete V = {
 									       Dat => "uisuris";
 									       Abl => "uisuris";
 									       Voc => "uisurae" } };
-						  Neut => table { Sg => table { Nom => "uisurum";
+						  Neutr => table { Sg => table { Nom => "uisurum";
 										Acc => "uisurum";
 										Gen => "uisuri";
 										Dat => "uisuro";
@@ -379,7 +380,7 @@ concrete V = {
 										   Dat => "uisis";
 										   Abl => "uisis";
 										   Voc => "uisae" } };
-						      Neut => table { Sg => table { Nom => "uisum";
+						      Neutr => table { Sg => table { Nom => "uisum";
 										    Acc => "uisum";
 										    Gen => "uisi";
 										    Dat => "uiso";
@@ -415,7 +416,7 @@ concrete V = {
 										   Dat => "uidendis";
 										   Abl => "uidendis";
 										   Voc => "uidendae" } };
-						      Neut => table { Sg => table { Nom => "uidendum";
+						      Neutr => table { Sg => table { Nom => "uidendum";
 										    Acc => "uidendum";
 										    Gen => "uidendi";
 										    Dat => "uidendo";
@@ -486,7 +487,7 @@ concrete V = {
 							      Gen => "quarum";
 							      Dat => "quibus";
 							      Abl => "quibus" } };
-				 Neut => table { Sg => table { Nom => "quod";
+				 Neutr => table { Sg => table { Nom => "quod";
 							       Voc => "quod";
 							       Acc => "quod";
 							       Gen => "cuius";
@@ -500,7 +501,7 @@ concrete V = {
 							       Abl => "quibus" } } } };
 					   
     -- Adv
-    
+
     mkAdv (head : A) : Adv =
       { s = head.adv };
       
@@ -593,6 +594,14 @@ concrete V = {
     downcastV3 (head : V3) : V =
       { act = head.act; imp = head.imp; inf = head.inf; part = head.part; pass = head.pass; sup = head.sup };
 
+    -- participles as adjectives
+
+    mkA (head : V) : A =
+      for f : VPartForm do { s = table { Posit  => head.part ! f;
+					 Compar => \\g : Gender => \\n : Number => \\c : Case => variants {};
+					 Superl => \\g : Gender => \\n : Number => \\c : Case => variants {} };
+			     adv = \\d : Degree => variants {} };
+    
     -- oblique
 
     attachOBL (head : VP) (obl : PrepNP) : VP =
@@ -619,6 +628,11 @@ concrete V = {
 			  n = head.n;
 			  g = head.g };
 
+    mkNP (head : A) : NP =
+      for d : Degree do for g : Gender do for n : Number do { s = head.s ! d ! g ! n;
+							      n = n;
+							      g = g };
+
     -- no nmods of As so far
     
     mkAP (head : A) : AP =
@@ -629,8 +643,6 @@ concrete V = {
 			       head.s ! d ! g ! n ! c || advmod.s ! dAdv };
 
     -- coordination
-
-    
 
     -- ne quidem
 
@@ -657,29 +669,16 @@ concrete V = {
 			  n = n;
 			  g = head.g };
 
-    mkPrepNP (head : PrepNP) (amod : AP) : PrepNP =
-      for d : Degree do { s = head.s || amod.s ! d ! head.g ! head.n ! head.c;
-			  c = head.c;
-			  n = head.n;
-			  g = head.g };
-
     -- attachment of PrepNP to PrepNP?
     -- attachment of amod to PrepRelat?
     -- relatives in amods?
 
-    mkPrepNP (head : N) (amod : PrepAP) : PrepNP =
-      for d : Degree do for n : Number do { s = head.s ! n ! amod.c || amod.s ! d ! head.g ! n;
-					    c = amod.c;
+    mkPrepNP (head : NP) (amod : AP) (case : Prep) : PrepNP =
+      for d : Degree do for n : Number do { s = ((case.s ++ head.s ! case.c) || amod.s ! d ! head.g ! n ! case.c)
+					      \/ (head.s ! case.c || (case.s ++ amod.s ! d ! head.g ! n ! case.c));
+					    c = case.c;
 					    n = n;
 					    g = head.g };    
-
-    mkPrepAP (head : PrepA) : PrepAP =
-      { s = head.s; c = head.c };
-
-    mkPrepAP (head : PrepA) (advmod : Adv) : PrepAP =
-      for dAdv : Degree do { s = \\d : Degree => \\g : Gender => \\n : Number =>
-			       head.s ! d ! g ! n || advmod.s ! dAdv;
-			     c = head.c };
 
     mkPrepA (head : A) (case : Prep) : PrepA =
       { s = \\d : Degree => \\g : Gender => \\n : Number

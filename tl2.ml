@@ -11,6 +11,7 @@ type log = Land of log * log
          | Lproject of ident * int
   
 type expr = Eepsilon
+          | Eempty
           | Estring of string
           | Eproject of ident * int
           | Econcat of expr * expr
@@ -38,6 +39,7 @@ let print_ident = print_string
 let print_expr e =
   let rec string_of_expr = function
       Eepsilon  -> "[]"
+    | Eempty    -> "variants {}"
     | Estring s -> "\"" ^ s ^ "\""
     | Eproject (i1, i2)-> i1 ^ "[" ^ (string_of_int i2) ^ "]"
     | Econcat (e1, e2) -> "Concat(" ^ (string_of_expr e1) ^ ", "

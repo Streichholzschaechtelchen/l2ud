@@ -33,6 +33,7 @@ let rec tl2_expr (lincats: Tl1.lincat_map)
         : Tl2.expr =
   match e with
     Tl1.Eepsilon          -> Tl2.Eepsilon
+  | Tl1.Eempty            -> Tl2.Eempty
   | Tl1.Estring s         -> Tl2.Estring s
   | Tl1.Eident i          -> assert false
   | Tl1.Eproject (i1, i2) -> let i = index i2 (Tl1.M.find (search i1 args)
