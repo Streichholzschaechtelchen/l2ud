@@ -94,7 +94,7 @@ let print_expr e =
                           ^ (string_of_expr e) ^ ")"
     | Erecord r        -> (List.fold_left (fun s rr -> s ^ (string_of_record rr) ^ "; ") "Record(" r) ^ ")"
     | Etable t         -> (List.fold_left (fun s tt -> s ^ (string_of_table tt) ^ "; ") "Table(" t) ^ ")"
-    | Ecovtable (p, es)-> (List.fold_right (fun s ee -> s ^ (string_of_expr ee) ^ "; ") ("COVTable:" ^ p.id ^ "(") es) ^ ")"
+    | Ecovtable (p, es)-> (List.fold_left (fun s ee -> s ^ (string_of_expr ee) ^ "; ") ("COVTable:" ^ p.id ^ "(") es) ^ ")"
     | Eif (e1, e2, e3) -> "If(" ^ (string_of_expr e1) ^ ", "
                           ^ (string_of_expr e2) ^ ", "
                           ^ (string_of_expr e3) ^ ")"
